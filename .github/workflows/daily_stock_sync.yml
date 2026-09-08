@@ -1,0 +1,53 @@
+name: Daily Stock Parquet Sync
+
+on:
+  schedule:
+    # 台灣時間平日 15:30 (UTC 07:30)
+    - cron: '30 7 * * 1-5'
+  workflow_dispatch:
+    inputs:
+      init_mode:
+        description: '是否跑全歷史初始化 (初次執行可勾選)'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  sync-stocks:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run Data Sync Script
+        run: |
+          if [ "${{ github.event.inputs.init_mode }}" = "true" ]; then
+            python scripts/sync_all_partitions.py --init
+          else
+            python scripts/sync_all_partitions.py
+          fi
+
+      - name: Commit and Push
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/
+          if git diff --staged --quiet; then
+            echo "今日無新交易資料。"
+          else
+            git commit -m "Auto: Update stock parquet dataset [skip ci]"
+            git push
+          fi
+
