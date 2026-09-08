@@ -38,8 +38,10 @@ def append_parquet(file_path, new_df, subset_keys):
         combined = new_df
     combined.to_parquet(file_path, engine='pyarrow', compression='snappy', index=False)
 
-def run_sync(is_init=False):
+def run_sync(is_init=False, limit=None):
     tickers = get_target_tickers()
+    if limit is not None:
+        tickers = tickers[:limit]
     period = "max" if is_init else "5d"
     print(f"[{datetime.now()}] 啟動同步 (模式: {'全歷史' if is_init else '增量'}, 標的數: {len(tickers)})")
     
@@ -95,6 +97,7 @@ def run_sync(is_init=False):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--init", action="store_true", help="初始化全部歷史資料")
+    parser.add_argument("--limit", type=int, default=None, help="限制同步標的數量 (用於測試或抽樣)")
     args = parser.parse_args()
-    run_sync(is_init=args.init)
+    run_sync(is_init=args.init, limit=args.limit)
 

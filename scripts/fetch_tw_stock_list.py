@@ -1,3 +1,4 @@
+import io
 import os
 import re
 import requests
@@ -16,22 +17,24 @@ def fetch_isin_market(str_mode: int, market_name: str, yfinance_suffix: str) -> 
     print(f"[{datetime.now()}] 正在抓取 {market_name} 名單...")
     
     resp = requests.get(url, headers=HEADERS)
-    resp.encoding = 'big5'
+    resp.encoding = 'cp950'
     
-    tables = pd.read_html(resp.text)
+    tables = pd.read_html(io.StringIO(resp.text))
     if not tables:
         raise ValueError(f"無法解析 {url} 網頁表格")
     
     df = tables[0]
-    df.columns = df.iloc[0]
+    df.columns = [re.sub(r'\(.*?\)', '', str(c)).strip() for c in df.iloc[0]]
     df = df.iloc[1:].copy()
     
     # 透過非空過濾掉大分類標題列
-    df = df.dropna(subset=['國際證券辨識號碼']).copy()
+    isin_col = next((c for c in df.columns if '國際證券辨識號碼' in str(c)), None)
+    if isin_col:
+        df = df[df[isin_col].notna()].copy()
     
     # 拆分代號與名稱（中間通常隔全形或半形空白）
-    col_code_name = '有價證券代號及名稱'
-    split_data = df[col_code_name].str.strip().str.split(r'[\s ]+', n=1, expand=True)
+    col_code_name = next((c for c in df.columns if '有價證券代號及名稱' in str(c)), df.columns[0])
+    split_data = df[col_code_name].str.strip().str.split(r'[\s\u3000 ]+', n=1, expand=True)
     df['Symbol'] = split_data[0]
     df['Name'] = split_data[1] if split_data.shape[1] > 1 else ''
     df['Market'] = market_name
