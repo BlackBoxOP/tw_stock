@@ -11,6 +11,11 @@ on:
         required: false
         type: boolean
         default: false
+      force_mode:
+        description: '是否強制重新抓取 (略過 Checkpoint)'
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   sync-stocks:
@@ -33,11 +38,14 @@ jobs:
 
       - name: Run Data Sync Script
         run: |
+          FLAGS=""
           if [ "${{ github.event.inputs.init_mode }}" = "true" ]; then
-            python scripts/sync_all_partitions.py --init
-          else
-            python scripts/sync_all_partitions.py
+            FLAGS="$FLAGS --init"
           fi
+          if [ "${{ github.event.inputs.force_mode }}" = "true" ]; then
+            FLAGS="$FLAGS --force"
+          fi
+          python scripts/sync_all_partitions.py $FLAGS
 
       - name: Commit and Push
         run: |
