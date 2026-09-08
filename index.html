@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="zh-TW" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TW Stock Data Hub | 台灣股市開放數據庫</title>
+  <meta name="description" content="每日自動化增量抓取台股全市場歷史資料，以三維度 Parquet 儲存，支援 DuckDB / Pandas 跨網域零下載極速查詢。">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    .gradient-text {
+      background: linear-gradient(135deg, #60a5fa 0%, #34d399 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .glow {
+      box-shadow: 0 0 50px -10px rgba(59, 130, 246, 0.15);
+    }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen font-sans selection:bg-blue-600 selection:text-white">
+
+  <!-- Header / Nav -->
+  <header class="border-b border-slate-800/80 bg-slate-950/60 backdrop-blur-md sticky top-0 z-50">
+    <div class="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
+      <div class="flex items-center space-x-3">
+        <div class="w-8 h-8 rounded-lg bg-gradient-to-tr from-blue-600 to-emerald-500 flex items-center justify-center font-bold text-white shadow-lg shadow-blue-500/20">
+          📈
+        </div>
+        <span class="font-bold text-lg tracking-tight">TW Stock Data Hub</span>
+        <span class="text-xs px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-mono">v1.0 • Parquet</span>
+      </div>
+      <div class="flex items-center space-x-4">
+        <a href="https://github.com/BlackBoxOP/tw_stock" target="_blank" rel="noopener noreferrer" class="flex items-center space-x-2 text-sm text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 px-3.5 py-1.5 rounded-lg border border-slate-700 transition">
+          <svg class="w-4 h-4 fill-current" viewBox="0 0 24 24"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+          <span>GitHub</span>
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <!-- Hero Section -->
+  <main class="max-w-6xl mx-auto px-6 py-12">
+    <div class="text-center max-w-3xl mx-auto mb-16">
+      <div class="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 text-xs font-mono mb-4">
+        <span>⚡ Serverless 台灣股市開放資料庫</span>
+      </div>
+      <h1 class="text-4xl sm:text-5xl font-extrabold tracking-tight mb-4">
+        零成本、極速查詢的<br><span class="gradient-text">三維度台股 Parquet 資料中心</span>
+      </h1>
+      <p class="text-slate-400 text-base sm:text-lg leading-relaxed">
+        每日盤後由 GitHub Actions 自動增量更新，按「個股、單日、年份」三種維度智能切分。透過 GitHub Pages 託管，結合 DuckDB HTTP Range 請求，免下載整包資料庫即可在毫秒內完成 SQL 跨網域分析。
+      </p>
+    </div>
+
+    <!-- Data Endpoints Grid -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-16">
+      <!-- Endpoint 1 -->
+      <div class="bg-slate-900/60 border border-slate-800 rounded-xl p-6 glow hover:border-blue-500/50 transition">
+        <div class="flex items-center justify-between mb-4">
+          <span class="text-xs font-mono font-semibold text-blue-400 bg-blue-500/10 px-2.5 py-1 rounded border border-blue-500/20">維度一</span>
+          <span class="text-xs text-slate-500">個股回測最優</span>
+        </div>
+        <h3 class="text-lg font-bold mb-2 text-white">按代號分檔 (by_ticker)</h3>
+        <p class="text-slate-400 text-sm mb-4">單一檔案包含單一個股所有歷史日線（例如台積電、鴻海等），回測單股無需讀取其他標的。</p>
+        <div class="bg-slate-950 rounded-lg p-3 border border-slate-800 font-mono text-xs text-blue-300 break-all select-all">
+          /data/by_ticker/{TICKER}.parquet
+        </div>
+        <div class="mt-3 text-xs text-slate-500">
+          範例：<code>data/by_ticker/2330_TW.parquet</code>
+        </div>
+      </div>
+
+      <!-- Endpoint 2 -->
+      <div class="bg-slate-900/60 border border-slate-800 rounded-xl p-6 glow hover:border-emerald-500/50 transition">
+        <div class="flex items-center justify-between mb-4">
+          <span class="text-xs font-mono font-semibold text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded border border-emerald-500/20">維度二</span>
+          <span class="text-xs text-slate-500">當日選股最優</span>
+        </div>
+        <h3 class="text-lg font-bold mb-2 text-white">按單日分檔 (by_date)</h3>
+        <p class="text-slate-400 text-sm mb-4">單一檔案包含當天全市場 2,000+ 檔標的成交價量，適合盤後選股、漲跌排行與快照分析。</p>
+        <div class="bg-slate-950 rounded-lg p-3 border border-slate-800 font-mono text-xs text-emerald-300 break-all select-all">
+          /data/by_date/{YYYY-MM-DD}.parquet
+        </div>
+        <div class="mt-3 text-xs text-slate-500">
+          範例：<code>data/by_date/2026-09-08.parquet</code>
+        </div>
+      </div>
+
+      <!-- Endpoint 3 -->
+      <div class="bg-slate-900/60 border border-slate-800 rounded-xl p-6 glow hover:border-purple-500/50 transition">
+        <div class="flex items-center justify-between mb-4">
+          <span class="text-xs font-mono font-semibold text-purple-400 bg-purple-500/10 px-2.5 py-1 rounded border border-purple-500/20">維度三</span>
+          <span class="text-xs text-slate-500">大盤統計最優</span>
+        </div>
+        <h3 class="text-lg font-bold mb-2 text-white">按年份分檔 (by_year)</h3>
+        <p class="text-slate-400 text-sm mb-4">單一檔案彙整該年度所有標的完整資料，適合跨年總經走勢、市場成交總量宏觀趨勢統計。</p>
+        <div class="bg-slate-950 rounded-lg p-3 border border-slate-800 font-mono text-xs text-purple-300 break-all select-all">
+          /data/by_year/{YYYY}.parquet
+        </div>
+        <div class="mt-3 text-xs text-slate-500">
+          範例：<code>data/by_year/2026.parquet</code>
+        </div>
+      </div>
+    </div>
+
+    <!-- Quick Query / Code Snippets -->
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 sm:p-8 mb-16">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between mb-6 pb-4 border-b border-slate-800 gap-4">
+        <div>
+          <h2 class="text-xl font-bold text-white">如何使用 DuckDB 跨網域遠端查詢？</h2>
+          <p class="text-slate-400 text-sm mt-1">無需預先下載檔案，利用 HTTP Range Request 僅讀取 SQL 所需的 Column 與 Row Group</p>
+        </div>
+      </div>
+
+      <div class="bg-slate-950 rounded-xl p-5 border border-slate-800 font-mono text-xs sm:text-sm text-slate-300 overflow-x-auto leading-relaxed">
+<pre><code class="text-blue-400">import</code> duckdb
+
+<span class="text-slate-500"># 透過 GitHub Pages URL 直接連線查詢（也可切換為本地相對路徑）</span>
+BASE_URL = <span class="text-emerald-400">"https://blackboxop.github.io/tw_stock/data"</span>
+
+<span class="text-slate-500"># 1. 個股查詢：只讀取 2330 台積電歷史日線</span>
+df_tsmc = duckdb.query(<span class="text-amber-300">f"""
+    SELECT Date, Open, High, Low, Close, Volume 
+    FROM '{BASE_URL}/by_ticker/2330_TW.parquet' 
+    ORDER BY Date DESC LIMIT 5
+"""</span>).df()
+print(df_tsmc)
+
+<span class="text-slate-500"># 2. 今日選股：取得成交量前 5 大個股</span>
+df_hot = duckdb.query(<span class="text-amber-300">f"""
+    SELECT Ticker, Close, Volume 
+    FROM '{BASE_URL}/by_date/2026-09-08.parquet' 
+    ORDER BY Volume DESC LIMIT 5
+"""</span>).df()
+print(df_hot)
+</code></pre>
+      </div>
+    </div>
+
+    <!-- Features Overview -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-16">
+      <div class="p-6 bg-slate-900/40 border border-slate-800 rounded-xl">
+        <div class="text-2xl mb-2">🛡️</div>
+        <h4 class="font-bold text-white mb-2">智能 Checkpoint 斷點續傳</h4>
+        <p class="text-slate-400 text-sm">
+          抓取前自動檢查個股最新交易日，若今日已收盤且資料已落盤，自動跳過該標的；若中途中斷重跑，全市場可無痛秒級續傳。
+        </p>
+      </div>
+      <div class="p-6 bg-slate-900/40 border border-slate-800 rounded-xl">
+        <div class="text-2xl mb-2">⏱️</div>
+        <h4 class="font-bold text-white mb-2">GitHub Actions 自動維護</h4>
+        <p class="text-slate-400 text-sm">
+          每週日深夜自證交所與櫃買中心官方同步股票名單；平日 15:30 盤後自動排程增量同步最新收盤價量，完全零人工介入。
+        </p>
+      </div>
+    </div>
+  </main>
+
+  <footer class="border-t border-slate-800 text-center py-8 text-xs text-slate-500">
+    <p>TW Stock Data Hub • Open Source under MIT License</p>
+    <p class="mt-1">資料來源：台灣證券交易所 (TWSE)、證券櫃檯買賣中心 (TPEx)、Yahoo Finance</p>
+  </footer>
+</body>
+</html>
