@@ -74,6 +74,7 @@ print(df_year)
 
 # ==========================================
 # 4. TWSE OpenAPI 盤中 5分/5秒 統計分析 (新增)
+# 4. TWSE OpenAPI 盤中 5分/5秒 統計分析
 # ==========================================
 openapi_dir = f"{BASE_URL}/twse_openapi/mi_5mins"
 existing_openapi = sorted(glob.glob(f"{openapi_dir}/*.parquet")) if USE_LOCAL else [f"{openapi_dir}/2026-09-08.parquet"]
@@ -95,3 +96,125 @@ if existing_openapi:
         LIMIT 5
     """).df()
     print(df_openapi)
+
+# ==========================================
+# 5. 籌碼面：三大法人買賣超排行 (外資+投信同步買超前5名)
+# ==========================================
+inst_dir = f"{BASE_URL}/institutional"
+existing_inst = sorted(glob.glob(f"{inst_dir}/*.parquet")) if USE_LOCAL else [f"{inst_dir}/2026-09-08.parquet"]
+if existing_inst:
+    inst_file = existing_inst[-1]
+    inst_date = os.path.splitext(os.path.basename(inst_file))[0]
+    print(f"\n--- 5. 三大法人買賣超排行 ({inst_date}，外資+投信同買) ---")
+    df_inst = duckdb.query(f"""
+        SELECT 
+            Ticker, Name, Market,
+            Foreign_Net / 1000 AS Foreign_K_Shares,
+            Trust_Net / 1000 AS Trust_K_Shares,
+            Dealer_Net / 1000 AS Dealer_K_Shares,
+            Total_Net / 1000 AS Total_K_Shares
+        FROM '{inst_file}'
+        WHERE Foreign_Net > 0 AND Trust_Net > 0
+        ORDER BY Total_Net DESC
+        LIMIT 5
+    """).df()
+    print(df_inst)
+
+# ==========================================
+# 6. 券商分點主力查詢 (Fubon DJ 嘉實資訊)
+# ==========================================
+broker_dir = f"{BASE_URL}/chips/broker_trading"
+existing_broker = sorted(glob.glob(f"{broker_dir}/*.parquet")) if USE_LOCAL else [f"{broker_dir}/2026-09-08.parquet"]
+if existing_broker:
+    broker_file = existing_broker[-1]
+    print(f"\n--- 6. 券商分點主力進出 (台積電 2330 買超前3大分點) ---")
+    df_broker = duckdb.query(f"""
+        SELECT 
+            Date, Ticker, Name, Side, Rank,
+            Broker_Name, Net_Qty, Share_Pct, Total_Buy, Avg_Buy_Cost
+        FROM '{broker_file}'
+        WHERE Ticker = '2330' AND Side = 'buy'
+        ORDER BY Rank ASC
+        LIMIT 3
+    """).df()
+    print(df_broker)
+
+# ==========================================
+# 7. 全維度跨表量化選股 (DuckDB 多表 JOIN)
+# 技術面 + 籌碼面(三大法人+融資) + 評價面(本益比/殖利率) + 基本面(營收YoY+季報EPS)
+# ==========================================
+rev_dir = f"{BASE_URL}/fundamental/revenue"
+eps_dir = f"{BASE_URL}/fundamental/eps"
+margin_dir = f"{BASE_URL}/margin"
+val_dir = f"{BASE_URL}/valuation"
+
+existing_rev = sorted(glob.glob(f"{rev_dir}/*.parquet"))
+existing_eps = sorted(glob.glob(f"{eps_dir}/*.parquet"))
+existing_margin = sorted(glob.glob(f"{margin_dir}/*.parquet"))
+existing_val = sorted(glob.glob(f"{val_dir}/*.parquet"))
+
+if existing_inst and existing_margin and existing_val and existing_rev and existing_eps:
+    print(f"\n--- 7. 全維度跨表量化選股 (籌碼 + 評價 + 營收成長 + 季報 EPS) ---")
+    df_quant = duckdb.query(f"""
+        SELECT 
+            i.Ticker,
+            i.Name,
+            i.Market,
+            i.Foreign_Net / 1000 AS Foreign_K,
+            i.Trust_Net / 1000 AS Trust_K,
+            (m.Margin_Balance - m.Margin_Prev_Balance) AS Margin_Change,
+            v.PE_Ratio,
+            v.Dividend_Yield,
+            r.YoY_Growth AS Rev_YoY_Pct,
+            e.EPS
+        FROM '{existing_inst[-1]}' i
+        LEFT JOIN '{existing_margin[-1]}' m ON i.Ticker = m.Ticker
+        LEFT JOIN '{existing_val[-1]}' v ON i.Ticker = v.Ticker
+        LEFT JOIN '{existing_rev[-1]}' r ON i.Ticker = r.Ticker
+        LEFT JOIN '{existing_eps[-1]}' e ON i.Ticker = e.Ticker
+        WHERE i.Foreign_Net > 0 
+          AND i.Trust_Net > 0
+          AND r.YoY_Growth > 10.0
+          AND e.EPS > 1.0
+        ORDER BY i.Foreign_Net DESC
+        LIMIT 5
+    """).df()
+    print(df_quant)
+
+# ==========================================
+# 8. 集保戶股權分散表 (TDCC 千張大戶與散戶比例)
+# ==========================================
+tdcc_dir = f"{BASE_URL}/chips/tdcc"
+existing_tdcc = sorted(glob.glob(f"{tdcc_dir}/*.parquet")) if USE_LOCAL else [f"{tdcc_dir}/2026-09-04.parquet"]
+if existing_tdcc:
+    tdcc_file = existing_tdcc[-1]
+    tdcc_date = os.path.splitext(os.path.basename(tdcc_file))[0]
+    print(f"\n--- 8. 集保大戶持股比例 ({tdcc_date}，指標權值股) ---")
+    df_tdcc = duckdb.query(f"""
+        SELECT 
+            Ticker, Total_Holders,
+            Under_10K_Pct AS Retail_Under_10K_Pct,
+            Over_400K_Pct AS Large_Over_400K_Pct,
+            Over_1000K_Pct AS Giant_Over_1000K_Pct,
+            Over_1000K_Holders AS Giant_Holders_Count
+        FROM '{tdcc_file}'
+        WHERE Ticker IN ('2330', '2317', '2454', '0050')
+        ORDER BY Over_1000K_Pct DESC
+    """).df()
+    print(df_tdcc)
+
+# ==========================================
+# 9. 除權除息預告與現金股利 (Dividends)
+# ==========================================
+div_file = f"{BASE_URL}/dividends/upcoming.parquet"
+if os.path.exists(div_file) or not USE_LOCAL:
+    print(f"\n--- 9. 即將除權除息預告表 (現金股利排行前5名) ---")
+    df_div = duckdb.query(f"""
+        SELECT 
+            Ex_Date, Ticker, Name, Ex_Type, Cash_Dividend, Latest_NAV
+        FROM '{div_file}'
+        WHERE Cash_Dividend > 0
+        ORDER BY Cash_Dividend DESC
+        LIMIT 5
+    """).df()
+    print(df_div)
