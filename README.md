@@ -35,7 +35,7 @@ flowchart TD
 
     subgraph GitHub Actions 自動排程
         W1["📅 update_stock_list.yml<br/>(每週日 02:00 自動更新名單)"]
-        W2["📈 daily_stock_sync.yml<br/>(平日 15:30 盤後雙軌同步)"]
+        W2["📈 daily_stock_sync.yml<br/>(平日 15:40 盤後雙軌同步)"]
     end
 
     subgraph 核心處理模組
