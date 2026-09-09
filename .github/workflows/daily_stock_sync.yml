@@ -20,6 +20,11 @@ on:
         required: false
         type: boolean
         default: false
+      backfill_days:
+        description: '回補歷史交易日天數 (例如 10 或 30，填 0 則不回補)'
+        required: false
+        type: string
+        default: '0'
 
 jobs:
   sync-stocks:
@@ -43,7 +48,6 @@ jobs:
       - name: Fetch TWSE OpenAPI 5-Minute Intraday Statistics
         run: python scripts/fetch_twse_openapi_5m.py
 
-      - name: Run Data Sync Script (1-min & Daily hybrid)
       - name: Fetch Institutional Trading (Foreign / Trust / Dealers Net Buy/Sell)
         run: python scripts/fetch_institutional_daily.py
 
@@ -62,8 +66,22 @@ jobs:
       - name: Fetch Quarterly EPS & Financial Statements
         run: python scripts/fetch_quarterly_eps.py
 
+      - name: Fetch Dividend Schedules & Ex-Right Results
+        run: python scripts/fetch_dividends.py
+
+      - name: Fetch TDCC Shareholding Distribution (Large Holders)
+        run: python scripts/fetch_tdcc_distribution.py
+
       - name: Fetch Key Broker Branch Trading Flows
         run: python scripts/fetch_broker_trading.py --stocks 2330 2317 2454 2308 2382 3231 2357 2603 --export-parquet
+
+      - name: Run Historical Backfill (Optional)
+        run: |
+          DAYS="${{ github.event.inputs.backfill_days }}"
+          if [ "$DAYS" != "0" ] && [ -n "$DAYS" ]; then
+            echo "正在回補過去 $DAYS 個交易日之歷史籌碼與評價面資料..."
+            python scripts/backfill_history.py --days $DAYS
+          fi
 
       - name: Run Price Data Sync Script (1-min & Daily hybrid)
         run: |
@@ -84,8 +102,6 @@ jobs:
           if git diff --staged --quiet; then
             echo "今日無新交易資料。"
           else
-            git commit -m "Auto: Update stock parquet dataset [skip ci]"
-            git commit -m "Auto: Update stock parquet dataset (OHLCV, Institutional, Margin, Valuation, Revenue, EPS, Broker) [skip ci]"
+            git commit -m "Auto: Update stock parquet dataset (OHLCV, Institutional, Margin, Valuation, Revenue, EPS, Broker, TDCC, Dividends) [skip ci]"
             git push
           fi
-
