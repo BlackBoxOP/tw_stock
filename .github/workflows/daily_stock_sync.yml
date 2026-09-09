@@ -36,7 +36,10 @@ jobs:
       - name: Install Dependencies
         run: pip install -r requirements.txt
 
-      - name: Run Data Sync Script
+      - name: Fetch TWSE OpenAPI 5-Minute Intraday Statistics
+        run: python scripts/fetch_twse_openapi_5m.py
+
+      - name: Run Data Sync Script (1-min & Daily hybrid)
         run: |
           FLAGS=""
           if [ "${{ github.event.inputs.init_mode }}" = "true" ]; then
