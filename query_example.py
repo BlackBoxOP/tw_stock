@@ -76,7 +76,7 @@ print(df_year)
 # 4. TWSE OpenAPI 盤中 5分/5秒 統計分析 (新增)
 # ==========================================
 openapi_dir = f"{BASE_URL}/twse_openapi/mi_5mins"
-existing_openapi = sorted(glob.glob(f"{openapi_dir}/*.parquet")) if USE_LOCAL else ["2026-09-09.parquet"]
+existing_openapi = sorted(glob.glob(f"{openapi_dir}/*.parquet")) if USE_LOCAL else [f"{openapi_dir}/2026-09-08.parquet"]
 if existing_openapi:
     openapi_file = existing_openapi[-1]
     openapi_date = os.path.splitext(os.path.basename(openapi_file))[0]

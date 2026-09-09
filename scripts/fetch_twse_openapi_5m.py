@@ -11,12 +11,29 @@ HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
 }
 
+def get_twse_official_date():
+    """向 TWSE MI_INDEX 查詢目前報表的官方交易日期 (解決盤前或收盤前日期誤判問題)"""
+    try:
+        r = requests.get("https://openapi.twse.com.tw/v1/exchangeReport/MI_INDEX", headers=HEADERS, timeout=10)
+        if r.status_code == 200:
+            data = r.json()
+            if isinstance(data, list) and len(data) > 0:
+                raw_date = list(data[0].values())[0]  # 民國年月日，如 "1150908"
+                if len(raw_date) >= 6:
+                    roc_year = int(raw_date[:-4])
+                    month = raw_date[-4:-2]
+                    day = raw_date[-2:]
+                    return f"{roc_year + 1911}-{month}-{day}"
+    except Exception:
+        pass
+    return datetime.now().strftime("%Y-%m-%d")
+
 def fetch_twse_mi_5mins(date_str=None):
     """
     抓取 TWSE 官方 OpenAPI 的 /exchangeReport/MI_5MINS (每5秒/5分委託成交統計)
     """
     if date_str is None:
-        date_str = datetime.now().strftime("%Y-%m-%d")
+        date_str = get_twse_official_date()
         
     url = "https://openapi.twse.com.tw/v1/exchangeReport/MI_5MINS"
     print(f"[{datetime.now()}] 正在自 TWSE OpenAPI 抓取 {date_str} 盤中每5秒/5分委託成交資料...")

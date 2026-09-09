@@ -128,7 +128,7 @@ https://stocks.blackboxop.eu.cc/data/by_date/2026-09-08.parquet
 https://stocks.blackboxop.eu.cc/data/by_year/2026.parquet
 
 # 5. TWSE 官方 5 分/5 秒盤中委託成交統計
-https://stocks.blackboxop.eu.cc/data/twse_openapi/mi_5mins/2026-09-09.parquet
+https://stocks.blackboxop.eu.cc/data/twse_openapi/mi_5mins/2026-09-08.parquet
 ```
 
 ---
@@ -154,7 +154,7 @@ print(df_tsmc)
 # 2. 查詢 TWSE 官方 OpenAPI 盤中每 5 秒/5 分委託成交爆量時段
 df_openapi = duckdb.query(f"""
     SELECT Time_Formatted as Time, IntervalTransaction, IntervalTradeVolume, IntervalTradeValue 
-    FROM '{BASE_URL}/twse_openapi/mi_5mins/2026-09-09.parquet' 
+    FROM '{BASE_URL}/twse_openapi/mi_5mins/2026-09-08.parquet' 
     ORDER BY IntervalTradeVolume DESC 
     LIMIT 5
 """).df()
