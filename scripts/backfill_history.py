@@ -19,11 +19,15 @@ from fetch_institutional_daily import fetch_and_save_institutional
 from fetch_margin_daily import fetch_and_save_margin
 from fetch_valuation_daily import fetch_and_save_valuation
 from fetch_market_indices import fetch_and_save_market_indices
+from fetch_taifex_institutional import fetch_and_save_taifex
+from fetch_sbl_daily import fetch_and_save_sbl
 
 INSTITUTIONAL_DIR = "data/institutional"
 MARGIN_DIR = "data/margin"
 VALUATION_DIR = "data/valuation"
 INDICES_DIR = "data/market_indices"
+TAIFEX_DIR = "data/taifex/institutional"
+SBL_DIR = "data/margin/sbl"
 
 def get_trading_days(start_date=None, end_date=None, days_limit=None):
     """自 data/by_date 或日曆取得有效交易日"""
@@ -92,6 +96,22 @@ def run_backfill(days=10, start=None, end=None, delay=1.0, overwrite=False):
             time.sleep(delay)
         else:
             print(f"  [大盤指數] {dt} 已存在，略過。")
+
+        # 5. 期交所三大法人未平倉
+        taifex_path = os.path.join(TAIFEX_DIR, f"{dt}.parquet")
+        if overwrite or not os.path.exists(taifex_path):
+            fetch_and_save_taifex(dt, overwrite=overwrite)
+            time.sleep(delay)
+        else:
+            print(f"  [期交所法人] {dt} 已存在，略過。")
+
+        # 6. 借券賣出與信用總量管制
+        sbl_path = os.path.join(SBL_DIR, f"{dt}.parquet")
+        if overwrite or not os.path.exists(sbl_path):
+            fetch_and_save_sbl(dt, overwrite=overwrite)
+            time.sleep(delay)
+        else:
+            print(f"  [借券賣出] {dt} 已存在，略過。")
 
     print(f"\n[{datetime.now()}] 歷史數據回補流程執行完畢！")
 

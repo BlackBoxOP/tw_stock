@@ -77,6 +77,10 @@ def fetch_twse_mi_5mins(date_str=None):
 
     # 2. 若 Web 未取到，回退至 OpenAPI 端點
     if df is None or df.empty:
+        if date_str is None:
+            actual_date = get_twse_official_date()
+        else:
+            actual_date = date_str
         official_dt = get_twse_official_date()
         if date_str is not None and date_str != official_dt:
             print(f"[{datetime.now()}] TWSE OpenAPI 僅提供最新交易日 ({official_dt})，與請求日期 ({date_str}) 不符，停止抓取以防誤標。")
@@ -142,6 +146,7 @@ def fetch_twse_mi_5mins(date_str=None):
     return output_path
 
 if __name__ == "__main__":
+    fetch_twse_mi_5mins()
     import argparse
     parser = argparse.ArgumentParser(description="抓取 TWSE 盤中每5秒委託成交統計")
     parser.add_argument("--date", type=str, default=None, help="交易日期 (格式: YYYY-MM-DD)")

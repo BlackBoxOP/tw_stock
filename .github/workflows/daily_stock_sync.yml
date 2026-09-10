@@ -75,6 +75,15 @@ jobs:
       - name: Fetch Key Broker Branch Trading Flows
         run: python scripts/fetch_broker_trading.py --stocks 2330 2317 2454 2308 2382 3231 2357 2603 --export-parquet
 
+      - name: Fetch TAIFEX Futures Institutional Positions (Foreign Net OI)
+        run: python scripts/fetch_taifex_institutional.py
+
+      - name: Fetch TWSE SBL & Credit Limits (Securities Lending & Short Sale)
+        run: python scripts/fetch_sbl_daily.py
+
+      - name: Generate Daily Quantitative Market Summary Report
+        run: python scripts/generate_daily_report.py
+
       - name: Run Historical Backfill (Optional)
         run: |
           DAYS="${{ github.event.inputs.backfill_days }}"
@@ -98,11 +107,11 @@ jobs:
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add data/
+          git add data/ reports/
           if git diff --staged --quiet; then
             echo "今日無新交易資料。"
           else
-            git commit -m "Auto: Update stock parquet dataset (OHLCV, Institutional, Margin, Valuation, Revenue, EPS, Broker, TDCC, Dividends) [skip ci]"
+            git commit -m "Auto: Update stock parquet dataset & daily quant report (OHLCV, TAIFEX, SBL, Institutional, Margin, Valuation, Revenue, EPS, Broker, TDCC, Dividends) [skip ci]"
             git push
           fi
 

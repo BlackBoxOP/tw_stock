@@ -218,3 +218,45 @@ if os.path.exists(div_file) or not USE_LOCAL:
         LIMIT 5
     """).df()
     print(df_div)
+
+# ==========================================
+# 10. 期交所三大法人期貨部位 (TAIFEX 外資/投信台指期未平倉)
+# ==========================================
+taifex_dir = f"{BASE_URL}/taifex/institutional"
+existing_taifex = sorted(glob.glob(f"{taifex_dir}/*.parquet")) if USE_LOCAL else []
+if existing_taifex:
+    taifex_file = existing_taifex[-1]
+    taifex_date = os.path.splitext(os.path.basename(taifex_file))[0]
+    print(f"\n--- 10. 期貨三大法人大額交易與未平倉 ({taifex_date}，臺股期貨與小台) ---")
+    df_taifex = duckdb.query(f"""
+        SELECT 
+            Commodity, Institution, Net_Volume,
+            OI_Long_Volume, OI_Short_Volume, OI_Net_Volume
+        FROM '{taifex_file}'
+        WHERE Commodity IN ('臺股期貨', '小型臺指期貨')
+        ORDER BY Commodity, Institution
+    """).df()
+    print(df_taifex)
+
+# ==========================================
+# 11. 借券賣出管制餘額 (TWSE SBL 外資空頭避險指標)
+# ==========================================
+sbl_dir = f"{BASE_URL}/margin/sbl"
+existing_sbl = sorted(glob.glob(f"{sbl_dir}/*.parquet")) if USE_LOCAL else []
+if existing_sbl:
+    sbl_file = existing_sbl[-1]
+    sbl_date = os.path.splitext(os.path.basename(sbl_file))[0]
+    print(f"\n--- 11. 借券賣出與信用總量管制 ({sbl_date}，長榮/廣達/聯發科/台積電) ---")
+    df_sbl = duckdb.query(f"""
+        SELECT 
+            Ticker, Name, Margin_Short_Balance,
+            SBL_Daily_Sell / 1000 AS SBL_Sell_K,
+            SBL_Daily_Return / 1000 AS SBL_Return_K,
+            SBL_Net_Change / 1000 AS SBL_Net_Change_K,
+            SBL_Balance / 1000 AS SBL_Balance_K
+        FROM '{sbl_file}'
+        WHERE Ticker IN ('2330', '2317', '2454', '2382', '2603')
+        ORDER BY SBL_Balance DESC
+    """).df()
+    print(df_sbl)
+

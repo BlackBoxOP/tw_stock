@@ -223,6 +223,7 @@ def _save_to_db(result):
     init_broker_table()
     conn = get_conn()
     meta = result.get('meta', {})
+    today = meta.get('last_update') or datetime.now().strftime('%Y-%m-%d')
     today = meta.get('last_update')
     if not today:
         conn.close()
