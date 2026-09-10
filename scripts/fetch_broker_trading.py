@@ -202,6 +202,10 @@ def fetch_broker_trading(stock_id, period=1):
     if not buy_list and not sell_list:
         return None
 
+    if not meta.get('last_update'):
+        logging.warning("個股 %s 分點資料未解析到官方最後更新日，略過以防誤標日期。", stock_id)
+        return None
+
     result = {
         'stock_id': stock_id,
         'period': period,
@@ -219,7 +223,10 @@ def _save_to_db(result):
     init_broker_table()
     conn = get_conn()
     meta = result.get('meta', {})
-    today = meta.get('last_update') or datetime.now().strftime('%Y-%m-%d')
+    today = meta.get('last_update')
+    if not today:
+        conn.close()
+        return
     stock_id = result['stock_id']
     period = result['period']
 

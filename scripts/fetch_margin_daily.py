@@ -16,7 +16,7 @@ def clean_num(val):
     if val is None or pd.isna(val):
         return 0
     s = str(val).replace(',', '').strip()
-    if not s or s == '--':
+    if not s or s == '--' or s == '-':
         return 0
     try:
         return int(s)
@@ -30,15 +30,15 @@ def clean_float(val):
     if val is None or pd.isna(val):
         return 0.0
     s = str(val).replace(',', '').strip()
-    if not s or s == '--':
+    if not s or s == '--' or s == '-':
         return 0.0
     try:
         return round(float(s), 4)
     except ValueError:
         return 0.0
 
-def get_latest_trading_date():
-    """透過 TWSE MI_INDEX 取得最近官方交易日 (格式 YYYY-MM-DD)"""
+def get_latest_official_date():
+    """透過 TWSE MI_INDEX 查詢官方最新已結算交易日 (格式 YYYY-MM-DD)"""
     try:
         r = requests.get("https://openapi.twse.com.tw/v1/exchangeReport/MI_INDEX", headers=HEADERS, timeout=10)
         if r.status_code == 200:
@@ -55,45 +55,55 @@ def get_latest_trading_date():
     return datetime.now().strftime("%Y-%m-%d")
 
 def fetch_twse_margin(date_str):
-    url = "https://openapi.twse.com.tw/v1/exchangeReport/MI_MARGN"
-    print(f"[{datetime.now()}] 正在抓取 TWSE 上市融資融券餘額...")
+    """
+    抓取 TWSE (上市) 融資融券餘額，嚴格比對回傳日期
+    端點: https://www.twse.com.tw/rwd/zh/marginTrading/MI_MARGN?date={YYYYMMDD}&selectType=ALL&response=json
+    """
+    yyyymmdd = date_str.replace('-', '')
+    url = f"https://www.twse.com.tw/rwd/zh/marginTrading/MI_MARGN?date={yyyymmdd}&selectType=ALL&response=json"
+    print(f"[{datetime.now()}] 正在抓取 TWSE 上市融資融券餘額 ({date_str})...")
     try:
-        resp = requests.get(url, headers=HEADERS, timeout=20)
+        resp = requests.get(url, headers=HEADERS, timeout=25)
         if resp.status_code != 200:
-            print(f"TWSE 回傳 HTTP {resp.status_code}")
-            return []
-        data = resp.json()
-        if not isinstance(data, list) or len(data) == 0:
-            print("TWSE 無融資融券資料")
-            return []
+            print(f"TWSE 回傳異常狀態碼: {resp.status_code}")
+            return [], None
+        res_json = resp.json()
+        if res_json.get('stat') != 'OK' or 'tables' not in res_json or len(res_json['tables']) < 2:
+            print(f"TWSE 無 {date_str} 融資融券資料 (stat: {res_json.get('stat')})")
+            return [], None
 
+        actual_date_raw = str(res_json.get('date', '')).strip()
+        if actual_date_raw and actual_date_raw != yyyymmdd:
+            print(f"TWSE 日期不符：請求 {yyyymmdd} 但回傳 {actual_date_raw}，略過以防誤標。")
+            return [], None
+
+        raw_rows = res_json['tables'][1].get('data', [])
         rows = []
-        for d in data:
-            values = list(d.values())
-            if len(values) < 15:
+        for d in raw_rows:
+            if len(d) < 15:
                 continue
-            ticker = str(values[0]).strip()
-            name = str(values[1]).strip()
+            ticker = str(d[0]).strip()
+            name = str(d[1]).strip()
             if not ticker or len(ticker) < 2:
                 continue
 
-            m_buy = clean_num(values[2])
-            m_sell = clean_num(values[3])
-            m_cash_repay = clean_num(values[4])
-            m_prev_bal = clean_num(values[5])
-            m_bal = clean_num(values[6])
-            m_limit = clean_num(values[7])
+            m_buy = clean_num(d[2])
+            m_sell = clean_num(d[3])
+            m_cash_repay = clean_num(d[4])
+            m_prev_bal = clean_num(d[5])
+            m_bal = clean_num(d[6])
+            m_limit = clean_num(d[7])
             m_util = round(m_bal / m_limit * 100, 2) if m_limit > 0 else 0.0
 
-            s_buy = clean_num(values[8])
-            s_sell = clean_num(values[9])
-            s_stock_repay = clean_num(values[10])
-            s_prev_bal = clean_num(values[11])
-            s_bal = clean_num(values[12])
-            s_limit = clean_num(values[13])
+            s_buy = clean_num(d[8])
+            s_sell = clean_num(d[9])
+            s_stock_repay = clean_num(d[10])
+            s_prev_bal = clean_num(d[11])
+            s_bal = clean_num(d[12])
+            s_limit = clean_num(d[13])
             s_util = round(s_bal / s_limit * 100, 2) if s_limit > 0 else 0.0
 
-            offset = clean_num(values[14])
+            offset = clean_num(d[14])
 
             rows.append({
                 'Date': date_str,
@@ -117,48 +127,62 @@ def fetch_twse_margin(date_str):
                 'Offsetting': offset,
             })
         print(f"TWSE 上市取得 {len(rows)} 檔融資融券資料。")
-        return rows
+        return rows, date_str
     except Exception as e:
         print(f"抓取 TWSE 融資融券失敗: {e}")
-        return []
+        return [], None
 
 def fetch_tpex_margin(date_str):
-    url = "https://www.tpex.org.tw/openapi/v1/tpex_mainboard_margin_balance"
-    print(f"[{datetime.now()}] 正在抓取 TPEx 上櫃融資融券餘額...")
+    """
+    抓取 TPEx (上櫃) 融資融券餘額，嚴格比對回傳日期
+    端點: https://www.tpex.org.tw/www/zh-tw/margin/balance?date={YYYY/MM/DD}&response=json
+    """
+    date_slash = date_str.replace('-', '/')
+    yyyymmdd = date_str.replace('-', '')
+    url = f"https://www.tpex.org.tw/www/zh-tw/margin/balance?date={date_slash}&response=json"
+    print(f"[{datetime.now()}] 正在抓取 TPEx 上櫃融資融券餘額 ({date_str})...")
     try:
-        resp = requests.get(url, headers=HEADERS, timeout=20)
+        resp = requests.get(url, headers=HEADERS, timeout=25)
         if resp.status_code != 200:
-            print(f"TPEx 回傳 HTTP {resp.status_code}")
-            return []
-        data = resp.json()
-        if not isinstance(data, list) or len(data) == 0:
-            print("TPEx 無融資融券資料")
-            return []
+            print(f"TPEx 回傳異常狀態碼: {resp.status_code}")
+            return [], None
+        res_json = resp.json()
+        if res_json.get('stat') != 'ok' or 'tables' not in res_json or len(res_json['tables']) == 0:
+            print(f"TPEx 無 {date_str} 融資融券資料 (stat: {res_json.get('stat')})")
+            return [], None
 
+        actual_date_raw = str(res_json.get('date', '')).strip()
+        if actual_date_raw and actual_date_raw != yyyymmdd:
+            print(f"TPEx 日期不符：請求 {yyyymmdd} 但回傳 {actual_date_raw}，略過以防誤標。")
+            return [], None
+
+        raw_rows = res_json['tables'][0].get('data', [])
         rows = []
-        for d in data:
-            ticker = str(d.get('SecuritiesCompanyCode', '')).strip()
-            name = str(d.get('CompanyName', '')).strip()
+        for d in raw_rows:
+            if len(d) < 19:
+                continue
+            ticker = str(d[0]).strip()
+            name = str(d[1]).strip()
             if not ticker:
                 continue
 
-            m_buy = clean_num(d.get('MarginPurchase'))
-            m_sell = clean_num(d.get('MarginSales'))
-            m_cash_repay = clean_num(d.get('CashRedemption'))
-            m_prev_bal = clean_num(d.get('MarginPurchaseBalancePreviousDay'))
-            m_bal = clean_num(d.get('MarginPurchaseBalance'))
-            m_limit = clean_num(d.get('MarginPurchaseQuota'))
-            m_util = clean_float(d.get('MarginPurchaseUtilizationRate'))
+            m_prev_bal = clean_num(d[2])
+            m_buy = clean_num(d[3])
+            m_sell = clean_num(d[4])
+            m_cash_repay = clean_num(d[5])
+            m_bal = clean_num(d[6])
+            m_util = clean_float(d[8])
+            m_limit = clean_num(d[9])
 
-            s_buy = clean_num(d.get('ShortConvering'))
-            s_sell = clean_num(d.get('ShortSale'))
-            s_stock_repay = clean_num(d.get('StockRedemption'))
-            s_prev_bal = clean_num(d.get('ShortSaleBalancePreviousDay'))
-            s_bal = clean_num(d.get('ShortSaleBalance'))
-            s_limit = clean_num(d.get('ShortSaleQuota'))
-            s_util = clean_float(d.get('ShortSaleUtilizationRate'))
+            s_prev_bal = clean_num(d[10])
+            s_sell = clean_num(d[11])
+            s_buy = clean_num(d[12])
+            s_stock_repay = clean_num(d[13])
+            s_bal = clean_num(d[14])
+            s_util = clean_float(d[16])
+            s_limit = clean_num(d[17])
 
-            offset = clean_num(d.get('Offsetting'))
+            offset = clean_num(d[18])
 
             rows.append({
                 'Date': date_str,
@@ -182,17 +206,22 @@ def fetch_tpex_margin(date_str):
                 'Offsetting': offset,
             })
         print(f"TPEx 上櫃取得 {len(rows)} 檔融資融券資料。")
-        return rows
+        return rows, date_str
     except Exception as e:
         print(f"抓取 TPEx 融資融券失敗: {e}")
-        return []
+        return [], None
 
-def fetch_and_save_margin(date_str=None):
+def fetch_and_save_margin(date_str=None, overwrite=True):
     if date_str is None:
-        date_str = get_latest_trading_date()
+        date_str = get_latest_official_date()
 
-    twse_rows = fetch_twse_margin(date_str)
-    tpex_rows = fetch_tpex_margin(date_str)
+    out_file = os.path.join(OUTPUT_DIR, f"{date_str}.parquet")
+    if os.path.exists(out_file) and not overwrite:
+        print(f"[{date_str}] 融資融券檔案已存在，略過。")
+        return out_file
+
+    twse_rows, twse_dt = fetch_twse_margin(date_str)
+    tpex_rows, tpex_dt = fetch_tpex_margin(date_str)
     all_rows = twse_rows + tpex_rows
 
     if not all_rows:
@@ -201,14 +230,12 @@ def fetch_and_save_margin(date_str=None):
 
     df = pd.DataFrame(all_rows)
     df.sort_values(by=['Market', 'Ticker'], inplace=True)
-    out_file = os.path.join(OUTPUT_DIR, f"{date_str}.parquet")
     df.to_parquet(out_file, engine='pyarrow', compression='snappy', index=False)
-    print(f"[{datetime.now()}] 成功儲存 {len(df)} 筆融資融券資料至 {out_file}")
+    print(f"[{datetime.now()}] 成功儲存 {len(df)} 筆融資融券資料至 {out_file} (上市: {len(twse_rows)}, 上櫃: {len(tpex_rows)})")
     return out_file
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="抓取每日融資融券信用交易資料")
+    parser = argparse.ArgumentParser(description="抓取每日融資融券信用交易資料 (嚴格日期校驗)")
     parser.add_argument("--date", type=str, default=None, help="交易日期 (格式: YYYY-MM-DD)")
     args = parser.parse_args()
     fetch_and_save_margin(args.date)
-

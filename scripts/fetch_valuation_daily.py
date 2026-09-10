@@ -23,7 +23,8 @@ def clean_float(val):
     except ValueError:
         return np.nan
 
-def get_latest_trading_date():
+def get_latest_official_date():
+    """透過 TWSE MI_INDEX 查詢官方最新已結算交易日 (格式 YYYY-MM-DD)"""
     try:
         r = requests.get("https://openapi.twse.com.tw/v1/exchangeReport/MI_INDEX", headers=HEADERS, timeout=10)
         if r.status_code == 200:
@@ -40,29 +41,42 @@ def get_latest_trading_date():
     return datetime.now().strftime("%Y-%m-%d")
 
 def fetch_twse_valuation(date_str):
-    url = "https://openapi.twse.com.tw/v1/exchangeReport/BWIBBU_d"
-    print(f"[{datetime.now()}] 正在抓取 TWSE 上市本益比、殖利率、淨值比...")
+    """
+    抓取 TWSE (上市) 本益比、殖利率、淨值比，嚴格比對回傳日期
+    端點: https://www.twse.com.tw/rwd/zh/afterTrading/BWIBBU_d?date={YYYYMMDD}&selectType=ALL&response=json
+    """
+    yyyymmdd = date_str.replace('-', '')
+    url = f"https://www.twse.com.tw/rwd/zh/afterTrading/BWIBBU_d?date={yyyymmdd}&selectType=ALL&response=json"
+    print(f"[{datetime.now()}] 正在抓取 TWSE 上市評價面資料 ({date_str})...")
     try:
-        resp = requests.get(url, headers=HEADERS, timeout=20)
+        resp = requests.get(url, headers=HEADERS, timeout=25)
         if resp.status_code != 200:
-            print(f"TWSE 回傳 HTTP {resp.status_code}")
-            return []
-        data = resp.json()
-        if not isinstance(data, list) or len(data) == 0:
-            return []
+            print(f"TWSE 回傳異常狀態碼: {resp.status_code}")
+            return [], None
+        res_json = resp.json()
+        if res_json.get('stat') != 'OK' or not res_json.get('data'):
+            print(f"TWSE 無 {date_str} 評價面資料 (stat: {res_json.get('stat')})")
+            return [], None
+
+        actual_date_raw = str(res_json.get('date', '')).strip()
+        if actual_date_raw and actual_date_raw != yyyymmdd:
+            print(f"TWSE 日期不符：請求 {yyyymmdd} 但回傳 {actual_date_raw}，略過以防誤標。")
+            return [], None
 
         rows = []
-        for d in data:
-            ticker = str(d.get('Code', '')).strip()
-            name = str(d.get('Name', '')).strip()
+        for d in res_json['data']:
+            if len(d) < 8:
+                continue
+            ticker = str(d[0]).strip()
+            name = str(d[1]).strip()
             if not ticker:
                 continue
 
-            pe = clean_float(d.get('PEratio'))
-            pb = clean_float(d.get('PBratio'))
-            dy = clean_float(d.get('DividendYield'))
-            close_price = clean_float(d.get('ClosePrice'))
-            quarter = str(d.get('FiscalYearQuarter', '')).strip()
+            close_price = clean_float(d[2])
+            dy = clean_float(d[3])
+            pe = clean_float(d[5])
+            pb = clean_float(d[6])
+            quarter = str(d[7]).strip()
 
             rows.append({
                 'Date': date_str,
@@ -76,34 +90,49 @@ def fetch_twse_valuation(date_str):
                 'Fiscal_Quarter': quarter
             })
         print(f"TWSE 上市取得 {len(rows)} 檔評價面資料。")
-        return rows
+        return rows, date_str
     except Exception as e:
         print(f"抓取 TWSE 評價面失敗: {e}")
-        return []
+        return [], None
 
 def fetch_tpex_valuation(date_str):
-    url = "https://www.tpex.org.tw/openapi/v1/tpex_mainboard_peratio_analysis"
-    print(f"[{datetime.now()}] 正在抓取 TPEx 上櫃本益比、殖利率、淨值比...")
+    """
+    抓取 TPEx (上櫃) 本益比、殖利率、淨值比，嚴格比對回傳日期
+    端點: https://www.tpex.org.tw/www/zh-tw/afterTrading/peQryDate?date={YYYY/MM/DD}&response=json
+    """
+    date_slash = date_str.replace('-', '/')
+    yyyymmdd = date_str.replace('-', '')
+    url = f"https://www.tpex.org.tw/www/zh-tw/afterTrading/peQryDate?date={date_slash}&response=json"
+    print(f"[{datetime.now()}] 正在抓取 TPEx 上櫃評價面資料 ({date_str})...")
     try:
-        resp = requests.get(url, headers=HEADERS, timeout=20)
+        resp = requests.get(url, headers=HEADERS, timeout=25)
         if resp.status_code != 200:
-            print(f"TPEx 回傳 HTTP {resp.status_code}")
-            return []
-        data = resp.json()
-        if not isinstance(data, list) or len(data) == 0:
-            return []
+            print(f"TPEx 回傳異常狀態碼: {resp.status_code}")
+            return [], None
+        res_json = resp.json()
+        if res_json.get('stat') != 'ok' or 'tables' not in res_json or len(res_json['tables']) == 0:
+            print(f"TPEx 無 {date_str} 評價面資料 (stat: {res_json.get('stat')})")
+            return [], None
 
+        actual_date_raw = str(res_json.get('date', '')).strip()
+        if actual_date_raw and actual_date_raw != yyyymmdd:
+            print(f"TPEx 日期不符：請求 {yyyymmdd} 但回傳 {actual_date_raw}，略過以防誤標。")
+            return [], None
+
+        raw_rows = res_json['tables'][0].get('data', [])
         rows = []
-        for d in data:
-            ticker = str(d.get('SecuritiesCompanyCode', '')).strip()
-            name = str(d.get('CompanyName', '')).strip()
+        for d in raw_rows:
+            if len(d) < 8:
+                continue
+            ticker = str(d[0]).strip()
+            name = str(d[1]).strip()
             if not ticker:
                 continue
 
-            pe = clean_float(d.get('PriceEarningRatio'))
-            pb = clean_float(d.get('PriceBookRatio'))
-            dy = clean_float(d.get('YieldRatio'))
-            dps = clean_float(d.get('DividendPerShare'))
+            pe = clean_float(d[2])
+            dy = clean_float(d[5])
+            pb = clean_float(d[6])
+            quarter = str(d[7]).strip()
 
             rows.append({
                 'Date': date_str,
@@ -114,20 +143,25 @@ def fetch_tpex_valuation(date_str):
                 'PE_Ratio': pe,
                 'PB_Ratio': pb,
                 'Dividend_Yield': dy,
-                'Fiscal_Quarter': ''
+                'Fiscal_Quarter': quarter
             })
         print(f"TPEx 上櫃取得 {len(rows)} 檔評價面資料。")
-        return rows
+        return rows, date_str
     except Exception as e:
         print(f"抓取 TPEx 評價面失敗: {e}")
-        return []
+        return [], None
 
-def fetch_and_save_valuation(date_str=None):
+def fetch_and_save_valuation(date_str=None, overwrite=True):
     if date_str is None:
-        date_str = get_latest_trading_date()
+        date_str = get_latest_official_date()
 
-    twse_rows = fetch_twse_valuation(date_str)
-    tpex_rows = fetch_tpex_valuation(date_str)
+    out_file = os.path.join(OUTPUT_DIR, f"{date_str}.parquet")
+    if os.path.exists(out_file) and not overwrite:
+        print(f"[{date_str}] 評價面檔案已存在，略過。")
+        return out_file
+
+    twse_rows, twse_dt = fetch_twse_valuation(date_str)
+    tpex_rows, tpex_dt = fetch_tpex_valuation(date_str)
     all_rows = twse_rows + tpex_rows
 
     if not all_rows:
@@ -136,14 +170,12 @@ def fetch_and_save_valuation(date_str=None):
 
     df = pd.DataFrame(all_rows)
     df.sort_values(by=['Market', 'Ticker'], inplace=True)
-    out_file = os.path.join(OUTPUT_DIR, f"{date_str}.parquet")
     df.to_parquet(out_file, engine='pyarrow', compression='snappy', index=False)
-    print(f"[{datetime.now()}] 成功儲存 {len(df)} 筆評價面資料至 {out_file}")
+    print(f"[{datetime.now()}] 成功儲存 {len(df)} 筆評價面資料至 {out_file} (上市: {len(twse_rows)}, 上櫃: {len(tpex_rows)})")
     return out_file
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="抓取每日本益比、殖利率與淨值比資料")
+    parser = argparse.ArgumentParser(description="抓取每日本益比、殖利率、淨值比 (嚴格日期校驗)")
     parser.add_argument("--date", type=str, default=None, help="交易日期 (格式: YYYY-MM-DD)")
     args = parser.parse_args()
     fetch_and_save_valuation(args.date)
-
