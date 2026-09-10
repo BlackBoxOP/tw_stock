@@ -1,4 +1,4 @@
-﻿# 📈 TW Stock Data Hub (台股全方位開源量化數據倉儲)
+# 📈 TW Stock Data Hub (台股全方位開源量化數據倉儲)
 
 <p align="center">
   <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3.11%20%7C%203.12-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python"></a>
@@ -88,7 +88,7 @@ flowchart TD
 
     subgraph SCHEDULER["⚙️ GitHub Actions 雲端自動調度"]
         W_LIST["📅 update_stock_list.yml<br/>(每週日 02:00 自動刷新上市櫃名冊)"]
-        W_DAILY["📈 daily_stock_sync.yml<br/>(平日 15:30 / 15:40 / 20:30 盤後雙軌同步)"]
+        W_DAILY["📈 daily_stock_sync.yml<br/>(平日 15:40 / 20:40 盤後雙軌同步)"]
     end
 
     subgraph ENGINE["🧪 核心萃取、清洗與校驗管線"]
