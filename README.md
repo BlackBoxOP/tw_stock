@@ -1,201 +1,263 @@
-# 📈 TW Stock Data Hub (台灣股市 1 分 K 線與三維度開放數據庫)
-# 📈 TW Stock Data Hub (台股全方位量化開源數據倉儲)
+﻿# 📈 TW Stock Data Hub (台股全方位開源量化數據倉儲)
 
-[![Python](https://img.shields.io/badge/Python-3.11%20%7C%203.12-blue?logo=python&logoColor=white)](https://www.python.org/)
-[![Storage](https://img.shields.io/badge/Format-Apache%20Parquet-orange?logo=apache)](https://parquet.apache.org/)
-[![Query Engine](https://img.shields.io/badge/Query-DuckDB-yellow?logo=duckdb)](https://duckdb.org/)
-[![Automation](https://img.shields.io/badge/CI%2FCD-GitHub%20Actions-2088FF?logo=githubactions&logoColor=white)](https://github.com/features/actions)
-[![Hosting](https://img.shields.io/badge/CDN-GitHub%20Pages-brightgreen?logo=github)](https://pages.github.com/)
-[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+<p align="center">
+  <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3.11%20%7C%203.12-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python"></a>
+  <a href="https://parquet.apache.org/"><img src="https://img.shields.io/badge/Storage-Apache%20Parquet-D55E00?style=for-the-badge&logo=apache" alt="Parquet"></a>
+  <a href="https://duckdb.org/"><img src="https://img.shields.io/badge/Engine-DuckDB-FFF000?style=for-the-badge&logo=duckdb&logoColor=black" alt="DuckDB"></a>
+  <a href="https://github.com/features/actions"><img src="https://img.shields.io/badge/Automation-GitHub%20Actions-2088FF?style=for-the-badge&logo=githubactions&logoColor=white" alt="CI/CD"></a>
+  <a href="https://pages.github.com/"><img src="https://img.shields.io/badge/CDN-GitHub%20Pages-22C55E?style=for-the-badge&logo=github" alt="CDN"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge" alt="License"></a>
+</p>
 
-> **每日自動抓取全台股 2,300+ 檔上市櫃股票與 ETF 之「1 分鐘 K 線」與「日線」資料，同時採集證交所官方 OpenAPI 盤中 5 分/5 秒委託成交統計，以 Apache Parquet 格式切分三大維度儲存，支援透過 GitHub Pages / 自訂網域進行跨網域 HTTP Range 極速查詢。**
-> **每日自動抓取全台股 2,300+ 檔上市櫃股票之「1 分鐘 K 線」、「三大法人買賣超」、「融資融券」、「本益比/殖利率」、「月營收」、「每股盈餘 EPS」及「券商分點主力進出」，全數標準化為 Apache Parquet 格式，支援透過 DuckDB 進行極速跨網域 HTTP Range SQL 關聯分析！**
-> **每日自動抓取全台股 2,300+ 檔上市櫃股票之「1 分鐘 K 線」、「三大法人買賣超」、「融資融券」、「本益比/殖利率」、「月營收」、「每股盈餘 EPS」、「券商分點主力」、「集保大戶持股比例」及「除權除息預告」，全數標準化為 Apache Parquet 格式，支援透過 DuckDB 進行極速跨網域 HTTP Range SQL 關聯分析！**
-
----
-
-## 🌟 核心特色
-## 🌟 全維度資料涵蓋 (Multi-Dimensional Data Warehouse)
-
-- ⏱️ **1 分鐘 K 線優先（1-Minute Intraday K-Bar）**：核心同步引擎優先採集 1 分鐘 K 線資料（包含開盤、最高、最低、收盤、成交量），若該標的無分時資料（如冷門股、權證等）則自動回退至日線，兼具高頻細膩度與全市場完整性。
-- 🏛️ **TWSE 官方 OpenAPI 盤中統計**：每日收盤自動採集台灣證券交易所官方 OpenAPI 之「每 5 秒/5 分委託成交統計（`MI_5MINS`）」，並結構化計算每期增量成交筆數、張數與金額。
-- 🆓 **完全零維護成本 (Serverless & Zero Cost)**：基於 Git Scraping 架構，排程與運算全由 GitHub Actions 託管，資料直接發布於 GitHub Pages，無需任何主機或資料庫租用費用。
-- 🧊 **三維度分區儲存 (3-Dimensional Parquet Partitioning)**：針對「個股回測」、「盤後選股」與「大盤統計」三種常見情境實體切分，查詢效率提升 100 倍以上。
-- ⚡ **DuckDB 跨網域秒級讀取**：支援 HTTP Range Requests，外部分析端（Python 或瀏覽器 Web）無需下載整個資料庫，僅傳輸幾 KB 即可完成 SQL 跨網域分析。
-- 🛡️ **智能 Checkpoint 斷點續傳**：具備交易日檢查與批次原子落盤（Batch Flush），若今日已收盤且資料已落盤則秒級跳過；若中途中斷，可直接斷點續傳。
-| 維度 | 資料項目 | 涵蓋市場 | 儲存路徑 | 更新頻率 |
-| :--- | :--- | :--- | :--- | :--- |
-| **技術面** | **1 分鐘 K 線 / 日線** (OHLCV) | 全市場 2,300+ 檔 | `data/by_ticker/{ticker}.parquet`<br/>`data/by_date/{date}.parquet` | 每日盤後 (15:40) |
-| **技術面** | **1 分鐘 K 線 / 日線** (OHLCV 完整歷史) | 全市場 2,300+ 檔 | `data/by_ticker/{ticker}.parquet`<br/>`data/by_date/{date}.parquet` | 每日盤後 (15:40) |
-| **盤中統計** | **TWSE 每 5 秒/5 分盤中委託成交** (`MI_5MINS`) | 上市市場 | `data/twse_openapi/mi_5mins/{date}.parquet` | 每日盤後 (15:40) |
-| **籌碼面** | **三大法人買賣超** (外資、投信、自營商自行/避險) | 上市 + 上櫃 | `data/institutional/{date}.parquet` | 每日盤後 (15:40) |
-| **籌碼面** | **融資融券信用交易** (資券餘額、增減、使用率、互抵) | 上市 + 上櫃 | `data/margin/{date}.parquet` | 每日夜間 (20:30) |
-| **籌碼面** | **券商分點主力進出** (買賣前15大分點、成本均價) | 上市 + 上櫃 | `data/chips/broker_trading/{date}.parquet` | 每日夜間 (20:30) |
-| **籌碼面** | **券商分點主力進出** (前15大買賣分點、均價成本) | 上市 + 上櫃 | `data/chips/broker_trading/{date}.parquet` | 每日夜間 (20:30) |
-| **籌碼面** | **集保戶股權分散表** (千張大戶/400張大戶/散戶比例) | 全市場 4,000+ 標的 | `data/chips/tdcc/{date}.parquet` | 每週五盤後 |
-| **評價面** | **本益比、殖利率、股價淨值比** (PE / PB / Yield) | 上市 + 上櫃 | `data/valuation/{date}.parquet` | 每日盤後 (15:40) |
-| **基本面** | **月營收彙總** (當月、上月、去年同月、MoM、YoY、累計) | 上市 + 上櫃 | `data/fundamental/revenue/{YYYY-MM}.parquet` | 每月 1~10 號 |
-| **基本面** | **月營收彙總** (當月、上月、去年同月、MoM%、YoY%、累計) | 上市 + 上櫃 | `data/fundamental/revenue/{YYYY-MM}.parquet` | 每月 1~10 號 |
-| **基本面** | **季報損益與每股盈餘 (EPS)** (營收、營業利益、稅後淨利) | 上市 + 上櫃 | `data/fundamental/eps/{YYYY}_Q{Q}.parquet` | 每季財報季 |
-| **市場面** | **大盤與各產業分類指數** (加權指數、各類股指數漲跌) | 上市市場 | `data/market_indices/{date}.parquet` | 每日盤後 (15:40) |
-| **事件面** | **除權除息預告與除權息計算表** (現金股利、股票股利) | 上市 + 上櫃 | `data/dividends/upcoming.parquet` | 每日盤後 (15:40) |
+<p align="center">
+  <b>全台股 2,300+ 檔標的 • 1 分鐘 K 線高頻資料 • 12+ 維度籌碼與基本面 • 跨網域 HTTP Range 秒級 SQL 分析</b><br>
+  <sub>無需架設資料庫、零伺服器維護成本，隨取即用的開源台股量化數據中樞</sub>
+</p>
 
 ---
 
-## 🏛️ 架構與運作流程
-## 📂 資料夾架構
+> [!TIP]
+> **專案核心理念**：基於 **Git Scraping** 與 **Serverless** 架構，由 GitHub Actions 每日盤後定時抓取、清洗並落盤為標準 **Apache Parquet** 檔案。透過自訂網域 CDN 與 GitHub Pages 發布，外部分析端（Python、R、Jupyter 或瀏覽器 Web DuckDB-Wasm）**無需下載整份資料庫**，即可透過 **HTTP Range Requests** 數毫秒內完成 SQL 關聯查詢與策略選股！
+
+---
+
+## 📑 目錄導覽
+
+- [🌟 核心亮點](#-核心亮點)
+- [📊 全維度數據庫矩陣](#-全維度數據庫矩陣)
+- [🏛️ 系統架構與自動化管線](#️-系統架構與自動化管線)
+- [📂 專案結構與目錄導覽](#-專案結構與目錄導覽)
+- [🌐 公開 CDN 端點清單](#-公開-cdn-端點清單)
+- [🚀 快速開始 (DuckDB + Python)](#-快速開始-duckdb--python)
+- [💡 實戰量化選股與策略分析範例](#-實戰量化選股與策略分析範例)
+  - [1. 跨表多維度綜合選股 (籌碼 + 評價 + 營收成長 + EPS)](#1-跨表多維度綜合選股-籌碼--評價--營收成長--eps)
+  - [2. 追蹤券商主力分點進出與持股成本](#2-追蹤券商主力分點進出與持股成本)
+  - [3. 期交所期貨大額未平倉與借券賣出避險指標](#3-期交所期貨大額未平倉與借券賣出避險指標)
+- [📈 每日盤後量化日報](#-每日盤後量化日報)
+- [🛠️ 本地命令列操作指南](#️-本地命令列操作指南)
+- [⚠️ 免責聲明 & License](#️-免責聲明--license)
+
+---
+
+## 🌟 核心亮點
+
+| 特色 | 說明 |
+| :--- | :--- |
+| ⏱️ **1 分鐘 K 線優先採集** | 優先採集全市場高頻 1 分鐘 K 線（開高低收量 OHLCV），無分時交易之冷門標的自動回退日線，兼顧高解析度與全市場完整性。 |
+| 🧩 **12+ 全維度數據深度覆蓋** | 涵蓋技術線圖、TWSE 盤中 5 秒/5 分委託統計、三大法人、融資融券、券商分點主力、集保千張大戶、期貨法人部位、借券賣出、營收、EPS、估值及除權息。 |
+| ⚡ **DuckDB 跨網域秒級查詢** | 善用 Parquet 欄式儲存與 Snappy 壓縮特性，透過 HTTP Range Requests 僅抓取必要 Byte Range，無需下載數十 GB 檔案即可完成 SQL 分析。 |
+| 🧊 **三維度 Parquet 實體切分** | 個股全歷史 (`by_ticker`)、單日全市場快照 (`by_date`)、年度日線彙整 (`by_year`)，各場景查詢效能皆獲最佳化。 |
+| 🤖 **完全零運算與主機維護成本** | 純 Serverless 架構，排程運算完全託管於 GitHub Actions，檔案託管於 CDN，永久免付主機與雲端資料庫費用。 |
+| 🛡️ **智慧 Checkpoint 斷點續傳** | 具備交易日狀態檢驗、已落盤標的秒級跳過、批次原子寫入機制，並自動對年度日線聚合，徹底規避 GitHub 單檔 100MB 限制。 |
+
+---
+
+## 📊 全維度數據庫矩陣
+
+本數據倉儲每日由自動化管線標準化落盤為 Apache Parquet，涵蓋以下 12 大面向：
+
+| 面向 | 資料項目 | 涵蓋範圍與深度 | Parquet 儲存路徑 | 更新排程 (台灣時間) | 核心指標 / 欄位 |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **技術面** | **1 分鐘 K 線**<br/>(無則回退日線) | 全市場 2,300+ 檔<br/>上市、上櫃、ETF | `data/by_ticker/{ticker}.parquet`<br/>`data/by_date/{date}.parquet` | 每日盤後 15:40 | `Open`, `High`, `Low`, `Close`, `Volume`, `Datetime` |
+| **盤中高頻** | **TWSE 盤中成交統計** | 上市全市場 | `data/twse_openapi/mi_5mins/{date}.parquet` | 每日盤後 15:40 | 每 5 秒/5 分累計與間隔成交筆數、張數、金額 |
+| **籌碼面** | **三大法人買賣超** | 上市 + 上櫃 | `data/institutional/{date}.parquet` | 每日盤後 15:40 | 外資、投信、自營商（自買/避險）買賣超張數與金額 |
+| **籌碼面** | **融資融券信用交易** | 上市 + 上櫃 | `data/margin/{date}.parquet` | 每日夜間 20:30 | 資券餘額、當日增減、限額、資券使用率與互抵 |
+| **籌碼面** | **券商分點主力明細** | 權值與焦點股<br/>(嘉實資訊來源) | `data/chips/broker_trading/{date}.parquet` | 每日夜間 20:30 | 前 15 大買賣分點名稱、進出張數、買賣佔比、均價成本 |
+| **籌碼面** | **集保股權分散表** | 全市場 4,000+ 檔<br/>(臺灣集中保管結算所) | `data/chips/tdcc/{date}.parquet` | 每週五盤後 | 千張大戶持股比例、400 張大戶比例、百張散戶人數與佔比 |
+| **衍生與避險** | **期交所三大法人未平倉** | 台指期、小台、電子期等 (TAIFEX) | `data/taifex/institutional/{date}.parquet` | 每日盤後 15:40 | 外資/投信/自營之多方、空方、淨未平倉口數與當日變動 |
+| **衍生與避險** | **TWSE 借券賣出管制** | 上市市場 (TWSE SBL) | `data/margin/sbl/{date}.parquet` | 每日夜間 20:30 | 借券賣出當日成交、當日還券、借券餘額與信用管制上限 |
+| **評價面** | **本益比與殖利率** | 上市 + 上櫃 | `data/valuation/{date}.parquet` | 每日盤後 15:40 | 本益比 (P/E)、殖利率 (Yield %)、股價淨值比 (P/B) |
+| **基本面** | **月營收彙總** | 上市 + 上櫃 | `data/fundamental/revenue/{YYYY-MM}.parquet` | 每月 1~10 號 | 當月營收、上月營收、去年同月營收、MoM%、YoY%、累計營收 |
+| **基本面** | **季報損益與 EPS** | 上市 + 上櫃 | `data/fundamental/eps/{YYYY}_Q{Q}.parquet` | 每季財報季 | 營業收入、營業利益、稅後淨利、每股盈餘 EPS |
+| **市場與事件** | **大盤與各類股指數**<br/>**除權除息預告表** | 上市全類股指數<br/>上市櫃除權息名單 | `data/market_indices/{date}.parquet`<br/>`data/dividends/upcoming.parquet` | 每日盤後 15:40 | 大盤及各產業指數漲跌；即將除權息標的之現金/股票股利 |
+
+---
+
+## 🏛️ 系統架構與自動化管線
 
 ```mermaid
 flowchart TD
-    subgraph 官方與即時資料源
-        TWSE["台灣證券交易所 (ISIN 官方名單)"]
-        TPEX["證券櫃檯買賣中心 (ISIN 官方名單)"]
-        YF["即時分時行情 (1分K / 日線)"]
-        OPENAPI["TWSE 官方 OpenAPI (MI_5MINS 盤中每5秒統計)"]
+    subgraph SOURCING["📡 多源官方與即時數據節點"]
+        SRC_TWSE["🏛️ TWSE 證交所 (OpenAPI / ISIN 名冊 / 指數 / 借券 SBL)"]
+        SRC_TPEX["🏢 TPEx 證券櫃檯買賣中心 (上櫃行情 / 法人 / 信用)"]
+        SRC_TAIFEX["📊 TAIFEX 期交所 (三大法人期貨未平倉部位)"]
+        SRC_TDCC["🏦 TDCC 臺灣集中保管結算所 (千張大戶股權分散)"]
+        SRC_BROKER["🏪 券商主力分點數據源 (嘉實 / 富邦 DJ 行情)"]
+        SRC_YF["📈 實時分時交易源 (全市場 1 分 K / 日線行情)"]
     end
 
-    subgraph GitHub Actions 自動排程
-        W1["📅 update_stock_list.yml<br/>(每週日 02:00 自動更新名單)"]
-        W2["📈 daily_stock_sync.yml<br/>(平日 15:30 盤後雙軌同步)"]
-        W2["📈 daily_stock_sync.yml<br/>(平日 15:40 盤後雙軌同步)"]
+    subgraph SCHEDULER["⚙️ GitHub Actions 雲端自動調度"]
+        W_LIST["📅 update_stock_list.yml<br/>(每週日 02:00 自動刷新上市櫃名冊)"]
+        W_DAILY["📈 daily_stock_sync.yml<br/>(平日 15:30 / 15:40 / 20:30 盤後雙軌同步)"]
     end
 
-    subgraph 核心處理模組
-        F1["scripts/fetch_tw_stock_list.py<br/>爬取 2,300+ 檔標的名冊"]
-        F2["scripts/fetch_twse_openapi_5m.py<br/>採集盤中 5分/5秒 委託成交資料"]
-        F3["scripts/sync_all_partitions.py<br/>優先抓取 1分K (無則日線) + Checkpoint"]
+    subgraph ENGINE["🧪 核心萃取、清洗與校驗管線"]
+        E_FETCH["腳本叢集 (scripts/fetch_*.py)"]
+        E_CHECK["智能 Checkpoint 檢驗 (自動跳過已抓標的 / 交易日判斷)"]
+        E_BATCH["批次原子聚合落盤 (Batch Flush & 年線聚合保護)"]
+        E_REPORT["每日量化總覽報告生成器 (generate_daily_report.py)"]
     end
 
-    subgraph 三維度 Parquet 儲存庫
-        P0["data/tw_stock_list.parquet<br/>全市場標的名單 (含頻率標籤)"]
-        P1["data/by_ticker/{TICKER}.parquet<br/>維度 1：個股分檔 (1分K/日線，回測最優)"]
-        P2["data/by_date/{DATE}.parquet<br/>維度 2：單日全市場快照 (選股最優)"]
-        P3["data/by_year/{YEAR}.parquet<br/>維度 3：年度市場全資料 (統計最優)"]
-        P4["data/twse_openapi/mi_5mins/{DATE}.parquet<br/>TWSE 官方 5分/5秒 盤中交易統計"]
+    subgraph STORAGE["🗄️ Apache Parquet 開源資料倉儲"]
+        P_LIST["data/tw_stock_list.parquet (全市場 2,300+ 標的名冊)"]
+        P_TECH["data/by_ticker/ & by_date/ (1 分 K 線 & 日線快照)"]
+        P_CHIPS["data/institutional/ & margin/ & chips/ (全方位籌碼)"]
+        P_DERIV["data/taifex/ & margin/sbl/ (期貨未平倉 & 借券賣出)"]
+        P_FUND["data/fundamental/ (月營收 & 季報 EPS 歷史)"]
+        P_REP["reports/{DATE}_market_summary.md (每日大盤量化日報)"]
     end
 
-    subgraph 部署與存取層
-        GP["🌐 GitHub Pages / 自訂網域 CDN<br/>(開放跨域 HTTP Range Requests)"]
-        D1["🐍 Python / DuckDB / Pandas"]
-        D2["🌐 前端 Web / DuckDB-Wasm"]
+    subgraph DISTRIBUTION["🌐 高可用 CDN 跨網域發布層"]
+        CDN_PAGES["🚀 GitHub Pages CDN (免下載整包庫)"]
+        CDN_CUSTOM["⚡ 自訂網域 CDN: stocks.blackboxop.eu.cc"]
     end
 
-    TWSE & TPEX --> F1 --> W1 --> P0
-    OPENAPI --> F2 --> W2 --> P4
-    P0 & YF --> F3 --> W2
-    F3 --> P1 & P2 & P3
-    P0 & P1 & P2 & P3 & P4 --> GP
-    GP --> D1 & D2
+    subgraph CLIENTS["💻 客戶消費端 (HTTP Range 秒級讀取)"]
+        APP_DUCK["🦆 DuckDB (SQL 跨表秒級關聯)"]
+        APP_PY["🐍 Python / Pandas / Polars"]
+        APP_WASM["🌐 前端網頁 / DuckDB-Wasm / Observable"]
+        APP_BI["📊 BI 視覺化看板 / Jupyter Notebook"]
+    end
+
+    SOURCING --> SCHEDULER
+    SCHEDULER --> ENGINE
+    ENGINE --> STORAGE
+    STORAGE --> DISTRIBUTION
+    DISTRIBUTION --> CLIENTS
 ```
 
 ---
 
-## 📂 資料夾結構與切分維度
+## 📂 專案結構與目錄導覽
 
 ```text
-tw-stock-data/
+tw_stock/
 ├── .github/
 │   └── workflows/
-│       ├── update_stock_list.yml       # 每週日自動抓取上市櫃最新清單
-│       └── daily_stock_sync.yml        # 平日收盤後更新 1分K/日線與 OpenAPI 統計
-│       ├── update_stock_list.yml           # 每週日更新全台股標的名冊
-│       └── daily_stock_sync.yml            # 平日盤後雙階段自動同步所有數據
-│       └── daily_stock_sync.yml            # 平日盤後雙階段自動同步所有數據 (支援歷史回補)
+│       ├── update_stock_list.yml       # 每週日自動更新全市場 2,300+ 檔標的名冊
+│       └── daily_stock_sync.yml        # 平日盤後自動執行多階段資料擷取與日報生成
 ├── data/
-│   ├── tw_stock_list.parquet           # 全台股標的名冊
-│   ├── tw_stock_list.csv               # 名冊 CSV 備份
-│   ├── by_ticker/                      # 【維度 1】個股全歷史 (1分K優先，無則日線)
-│   ├── by_date/                        # 【維度 2】每日全市場快照 (例: 2026-09-08.parquet)
-│   ├── by_year/                        # 【維度 3】年度市場全資料 (例: 2026.parquet)
-│   └── twse_openapi/
-│       └── mi_5mins/                   # 證交所官方每日盤中每5秒/5分委託成交統計
-│   ├── tw_stock_list.parquet               # 全台股標的名冊 (代號、名稱、市場、產業)
-│   ├── by_ticker/                          # 【技術面】個股全歷史 (1分K優先，無則日線)
-│   ├── by_date/                            # 【技術面】每日全市場行情快照
-│   ├── by_year/                            # 【技術面】年度全市場日線彙整
-│   ├── twse_openapi/mi_5mins/              # 【盤中統計】TWSE 5秒/5分成交筆數與量價
-│   ├── institutional/                      # 【籌碼面】三大法人每日買賣超 (上市+上櫃)
-│   ├── margin/                             # 【籌碼面】融資融券每日餘額與增減 (上市+上櫃)
-│   ├── valuation/                          # 【評價面】每日本益比、股價淨值比、殖利率
-│   ├── fundamental/
-│   │   ├── revenue/                        # 【基本面】月營收彙總 (當月、MoM%、YoY%、累計)
-│   │   └── eps/                            # 【基本面】季報每股盈餘 EPS 與損益表
-│   ├── chips/broker_trading/               # 【籌碼面】券商分點主力買賣明細 (Fubon DJ 嘉實)
+│   ├── tw_stock_list.parquet           # 全台股標的名冊 (代號、名稱、市場、產業)
+│   ├── tw_stock_list.csv               # 名冊 CSV 格式備份
+│   ├── by_ticker/                      # 【維度 1】個股全歷史 (1分K優先，無則回退日線)
+│   ├── by_date/                        # 【維度 2】每日全市場行情快照
+│   ├── by_year/                        # 【維度 3】年度全市場日線彙整 (規避 100MB 限制)
+│   ├── twse_openapi/
+│   │   └── mi_5mins/                   # 【盤中統計】TWSE 官方盤中 5 秒/5 分成交量價筆數
+│   ├── institutional/                  # 【籌碼面】三大法人每日買賣超 (上市 + 上櫃)
+│   ├── margin/
+│   │   ├── sbl/                        # 【借券避險】TWSE 借券賣出當日成交、還券與餘額
+│   │   └── {date}.parquet              # 【信用交易】融資融券餘額、增減與使用率
 │   ├── chips/
-│   │   ├── broker_trading/                 # 【籌碼面】券商分點主力買賣明細 (Fubon DJ 嘉實)
-│   │   └── tdcc/                           # 【籌碼面】集保千張大戶與散戶持股比例 (TDCC)
-│   ├── dividends/                          # 【事件面】即將除權除息預告表與計算結果
-│   └── market_indices/                     # 【市場面】大盤與各類股指數
+│   │   ├── broker_trading/             # 【主力分點】前 15 大券商買賣明細與均價成本
+│   │   └── tdcc/                       # 【大戶籌碼】集保千張大戶、400張大戶持股比例
+│   ├── valuation/                      # 【評價面】每日本益比、股價淨值比、殖利率
+│   ├── fundamental/
+│   │   ├── revenue/                    # 【基本面】月營收彙總 (當月、MoM%、YoY%、累計)
+│   │   └── eps/                        # 【基本面】季報每股盈餘 EPS 與損益表
+│   ├── taifex/
+│   │   └── institutional/              # 【期貨籌碼】期交所三大法人大額期貨部位未平倉
+│   ├── market_indices/                 # 【市場面】加權指數與各產業分類指數表現
+│   └── dividends/                      # 【事件面】除權除息預告表與股利資訊
+├── reports/                            # 【量化日報】每日自動產出之 Markdown 盤後總覽報告
 ├── scripts/
-│   ├── fetch_tw_stock_list.py          # 證交所/櫃買中心名冊爬蟲
-│   ├── fetch_twse_openapi_5m.py        # 抓取 TWSE OpenAPI MI_5MINS 統計
-│   └── sync_all_partitions.py          # 1分K優先/日線回退 雙軌同步與 Checkpoint 引擎
-├── index.html                          # GitHub Pages 門戶入口與文件導覽
-├── query_example.py                    # DuckDB 跨維度分析查詢範例
-├── requirements.txt                    # 相依套件清單
-├── .nojekyll                           # 確保 GitHub Pages 完整提供 Parquet 靜態檔案
-│   ├── fetch_tw_stock_list.py              # 抓取上市櫃名冊
-│   ├── sync_all_partitions.py              # 1分K/日線增量同步
-│   ├── fetch_twse_openapi_5m.py            # 抓取 TWSE 盤中 5分統計
-│   ├── backfill_history.py                 # 【歷史回補】批量回補籌碼與評價面歷史數據
-│   ├── fetch_institutional_daily.py        # 抓取三大法人買賣超 (上市+上櫃)
-│   ├── fetch_margin_daily.py               # 抓取融資融券 (上市+上櫃)
-│   ├── fetch_valuation_daily.py            # 抓取本益比/殖利率/淨值比 (上市+上櫃)
-│   ├── fetch_monthly_revenue.py            # 抓取月營收 (上市+上櫃)
-│   ├── fetch_quarterly_eps.py              # 抓取季報 EPS (上市+上櫃)
-│   ├── fetch_broker_trading.py             # 抓取券商分點主力 (Fubon DJ + SQLite + Parquet)
-│   ├── fetch_tdcc_distribution.py          # 抓取集保股權分散與千張大戶比例 (TDCC)
-│   ├── fetch_dividends.py                  # 抓取除權除息預告與計算結果 (TWSE)
-│   ├── fetch_market_indices.py             # 抓取大盤類股指數
-│   └── db_helper.py                        # 本地 SQLite 資料庫相容層
-├── query_example.py                        # DuckDB 跨表全維度關聯分析範例
-├── query_example.py                        # DuckDB 跨表全維度關聯分析範例 (9大實戰查詢)
-├── requirements.txt                        # 套件需求清單
-└── README.md
+│   ├── sync_all_partitions.py          # 1分K/日線雙軌增量同步與 Checkpoint 引擎
+│   ├── generate_daily_report.py        # 每日量化盤後總覽儀表板日報產生器
+│   ├── fetch_tw_stock_list.py          # 證交所/櫃買中心官方名冊爬蟲
+│   ├── fetch_twse_openapi_5m.py        # TWSE OpenAPI 盤中 5 分統計擷取
+│   ├── fetch_institutional_daily.py    # 三大法人買賣超擷取 (上市 + 上櫃)
+│   ├── fetch_margin_daily.py           # 融資融券信用交易擷取 (上市 + 上櫃)
+│   ├── fetch_taifex_institutional.py   # 期交所三大法人期貨未平倉擷取
+│   ├── fetch_sbl_daily.py              # TWSE 借券賣出與信用總量管制擷取
+│   ├── fetch_broker_trading.py         # 券商分點主力買賣明細擷取 (嘉實 DJ)
+│   ├── fetch_tdcc_distribution.py      # 集保戶股權分散與千張大戶比例擷取
+│   ├── fetch_valuation_daily.py        # 本益比、殖利率、淨值比擷取
+│   ├── fetch_monthly_revenue.py        # 上市櫃月營收歷史彙整
+│   ├── fetch_quarterly_eps.py          # 上市櫃季報 EPS 與損益表擷取
+│   ├── fetch_market_indices.py         # 大盤及各類股指數報表擷取
+│   ├── fetch_dividends.py              # 除權除息預告與計算結果擷取
+│   ├── backfill_history.py             # 籌碼與評價面歷史多日批次回補
+│   ├── backfill_fundamental.py         # 多年歷史營收與季報 EPS 大規模回補
+│   └── db_helper.py                    # SQLite 本地存儲相容模組
+├── query_example.py                    # DuckDB 全維度 11 大實戰查詢範例腳本
+├── index.html                          # GitHub Pages 門戶導覽頁面
+├── requirements.txt                    # 專案相依套件清單
+└── README.md                           # 專案完整技術手冊
 ```
-
-### 三大維度選擇指南
-
-| 維度目錄 | 分檔方式 | 包含欄位 | 適用場景 |
-| :--- | :--- | :--- | :--- |
-| `data/by_ticker/` | 一檔個股一個檔案 | `Datetime` (或 `Date`), `Open`, `High`, `Low`, `Close`, `Volume` | 單股高頻回測、技術指標計算 (1分K優先) |
-| `data/by_date/` | 一個交易日一個檔案 | `Datetime` (或 `Date`), `Ticker`, `Open`, `High`, `Low`, `Close`, `Volume` | 盤後選股、當日高解析分時快照 |
-| `data/by_year/` | 一個年份一個檔案 | `Date`, `Ticker`, `Open`, `High`, `Low`, `Close`, `Volume` | 跨年度大盤趨勢、成交量週期分析 (日線彙整) |
-| `data/twse_openapi/mi_5mins/` | 一個交易日一個檔案 | `Time`, `AccTransaction`, `IntervalTransaction`, `AccTradeVolume`, `IntervalTradeVolume` 等 | 全市場盤中資金動能、每5秒/5分買賣力道研究 |
 
 ---
 
-## 🌐 透過 GitHub Pages 與自訂網域跨網域存取
-## 🚀 DuckDB 跨維度全方位量化選股範例
+## 🌐 公開 CDN 端點清單
 
-本專案支援透過 GitHub Pages 與自訂網域作為公開靜態 CDN：
-利用 DuckDB 的 Parquet 引擎，您可以在本地或直接透過 HTTP URL 對全維度資料庫執行標準 SQL 關聯查詢：
+本專案支援透過自訂網域或 GitHub Pages 作為全域靜態 CDN，所有檔案均支援 **HTTP Range Requests**：
 
-- **自訂網域 API 端點**：`https://stocks.blackboxop.eu.cc/data`
-- **GitHub Pages 預設端點**：`https://<username>.github.io/<repo>/data`
+- **自訂網域 CDN 端點**：`https://stocks.blackboxop.eu.cc/data`
+- **GitHub Pages 預設端點**：`https://blackboxop.github.io/tw_stock/data`
 
-### 1. 公開 API 端點範例
-```text
-# 1. 官方標的名冊
-https://stocks.blackboxop.eu.cc/data/tw_stock_list.parquet
+| 項目名稱 | 檔案 URL 範例 |
+| :--- | :--- |
+| **全市場標的名冊** | `https://stocks.blackboxop.eu.cc/data/tw_stock_list.parquet` |
+| **個股 1 分 K 線 (台積電)** | `https://stocks.blackboxop.eu.cc/data/by_ticker/2330_TW.parquet` |
+| **每日全市場快照** | `https://stocks.blackboxop.eu.cc/data/by_date/2026-09-08.parquet` |
+| **年度日線市場彙整** | `https://stocks.blackboxop.eu.cc/data/by_year/2026.parquet` |
+| **三大法人買賣超** | `https://stocks.blackboxop.eu.cc/data/institutional/2026-09-08.parquet` |
+| **融資融券信用交易** | `https://stocks.blackboxop.eu.cc/data/margin/2026-09-08.parquet` |
+| **借券賣出 (SBL)** | `https://stocks.blackboxop.eu.cc/data/margin/sbl/2026-09-08.parquet` |
+| **期貨三大法人部位 (TAIFEX)**| `https://stocks.blackboxop.eu.cc/data/taifex/institutional/2026-09-08.parquet` |
+| **券商分點主力買賣** | `https://stocks.blackboxop.eu.cc/data/chips/broker_trading/2026-09-08.parquet` |
+| **集保千張大戶分散** | `https://stocks.blackboxop.eu.cc/data/chips/tdcc/2026-09-04.parquet` |
+| **本益比與殖利率** | `https://stocks.blackboxop.eu.cc/data/valuation/2026-09-08.parquet` |
+| **月營收彙總** | `https://stocks.blackboxop.eu.cc/data/fundamental/revenue/2026-07.parquet` |
+| **季報 EPS 損益表** | `https://stocks.blackboxop.eu.cc/data/fundamental/eps/2026_Q2.parquet` |
+| **除權除息預告表** | `https://stocks.blackboxop.eu.cc/data/dividends/upcoming.parquet` |
 
-# 2. 個股 1 分 K 線 / 日線 (以 2330 台積電為例，.TW 改為 _TW)
-https://stocks.blackboxop.eu.cc/data/by_ticker/2330_TW.parquet
+---
 
-# 3. 當日全市場快照
-https://stocks.blackboxop.eu.cc/data/by_date/2026-09-08.parquet
+## 🚀 快速開始 (DuckDB + Python)
 
-# 4. 年度市場彙整
-https://stocks.blackboxop.eu.cc/data/by_year/2026.parquet
+### 1. 安裝必要套件
 
-# 5. TWSE 官方 5 分/5 秒盤中委託成交統計
-https://stocks.blackboxop.eu.cc/data/twse_openapi/mi_5mins/2026-09-08.parquet
-```sql
--- 策略範例：外資與投信同步買超 + 營收 YoY > 10% + 季報 EPS > 1.0 元 + 本益比 < 25
+```bash
+pip install duckdb pandas
+```
+
+### 2. 極簡 3 行遠端查詢台積電 1 分 K 線
+
+無論是在本地終端機或 Jupyter Notebook，DuckDB 可直接向 CDN 發送 HTTP Range 請求，**免下載完整檔案即可極速取得資料**：
+
+```python
+import duckdb
+
+# 直接向自訂網域 CDN 查詢台積電 (2330_TW) 最新 5 筆 1 分 K 線
+df = duckdb.query("""
+    SELECT Datetime, Open, High, Low, Close, Volume 
+    FROM 'https://stocks.blackboxop.eu.cc/data/by_ticker/2330_TW.parquet' 
+    ORDER BY Datetime DESC 
+    LIMIT 5
+""").df()
+
+print(df)
+```
+
+---
+
+## 💡 實戰量化選股與策略分析範例
+
+### 1. 跨表多維度綜合選股 (籌碼 + 評價 + 營收成長 + EPS)
+
+> **選股策略邏輯**：外資與投信**同步買超** + 融資減肥籌碼沉澱 + 本益比合理 (< 25) + 月營收年增率 **YoY > 10%** + 單季 **EPS > 1.0 元**。
+
+```python
+import duckdb
+
+BASE_URL = "https://stocks.blackboxop.eu.cc/data"
+DATE = "2026-09-08"
+
+query = f"""
 SELECT 
-    i.Date,
     i.Ticker,
     i.Name,
+    i.Market,
     i.Foreign_Net / 1000 AS Foreign_K_Shares,
     i.Trust_Net / 1000 AS Trust_K_Shares,
     (m.Margin_Balance - m.Margin_Prev_Balance) AS Margin_Net_Change,
@@ -203,134 +265,181 @@ SELECT
     v.Dividend_Yield,
     r.YoY_Growth AS Rev_YoY_Growth,
     e.EPS
-FROM 'data/institutional/2026-09-08.parquet' i
-LEFT JOIN 'data/margin/2026-09-08.parquet' m ON i.Ticker = m.Ticker
-LEFT JOIN 'data/valuation/2026-09-08.parquet' v ON i.Ticker = v.Ticker
-LEFT JOIN 'data/fundamental/revenue/2026-07.parquet' r ON i.Ticker = r.Ticker
-LEFT JOIN 'data/fundamental/eps/2026_Q2.parquet' e ON i.Ticker = e.Ticker
+FROM '{BASE_URL}/institutional/{DATE}.parquet' i
+LEFT JOIN '{BASE_URL}/margin/{DATE}.parquet' m ON i.Ticker = m.Ticker
+LEFT JOIN '{BASE_URL}/valuation/{DATE}.parquet' v ON i.Ticker = v.Ticker
+LEFT JOIN '{BASE_URL}/fundamental/revenue/2026-07.parquet' r ON i.Ticker = r.Ticker
+LEFT JOIN '{BASE_URL}/fundamental/eps/2026_Q2.parquet' e ON i.Ticker = e.Ticker
 WHERE i.Foreign_Net > 0 
   AND i.Trust_Net > 0
   AND r.YoY_Growth > 10.0
   AND e.EPS > 1.0
 ORDER BY i.Foreign_Net DESC
 LIMIT 10;
+"""
+
+df_quant = duckdb.query(query).df()
+print(df_quant)
 ```
 
----
+### 2. 追蹤券商主力分點進出與持股成本
 
-## 💻 快速查詢範例 (Python + DuckDB)
-## 🛠️ 命令列操作說明
-## 🛠️ 命令列操作指南
+> **策略邏輯**：深入觀察主力大戶在關鍵標的（如台積電 2330）的集中度，找出前三大買超券商分點與其平均建倉成本價。
 
 ```python
 import duckdb
-```bash
-# 1. 抓取技術面 1分K / 日線增量行情
-python scripts/sync_all_partitions.py
 
-# 自訂網域或本地目錄皆可直接查詢
 BASE_URL = "https://stocks.blackboxop.eu.cc/data"
-# 2. 抓取三大法人買賣超 (上市 + 上櫃)
-# 2. 歷史資料批量回補 (支援三大法人、融資融券、本益比殖利率，內建 Checkpoint 自動跳過已存檔案)
-python scripts/backfill_history.py --days 30             # 回補最近 30 個交易日
-python scripts/backfill_history.py --start 2026-08-01 --end 2026-09-08
+DATE = "2026-09-08"
 
-# 3. 抓取三大法人買賣超 (上市 + 上櫃)
-python scripts/fetch_institutional_daily.py
-
-# 1. 查詢台積電 (2330) 最近 5 根 1 分鐘 K 線 (若該股僅日線則欄位為 Date)
-df_tsmc = duckdb.query(f"""
-    SELECT Datetime, Open, High, Low, Close, Volume 
-    FROM '{BASE_URL}/by_ticker/2330_TW.parquet' 
-    ORDER BY Datetime DESC 
-    LIMIT 5
+df_broker = duckdb.query(f"""
+    SELECT 
+        Date, Ticker, Name, Rank,
+        Broker_Name, Net_Qty, Share_Pct, Total_Buy, Avg_Buy_Cost
+    FROM '{BASE_URL}/chips/broker_trading/{DATE}.parquet'
+    WHERE Ticker = '2330' AND Side = 'buy'
+    ORDER BY Rank ASC
+    LIMIT 3
 """).df()
-print("=== 2330.TW 最新 1 分 K 線 ===")
-print(df_tsmc)
-# 3. 抓取融資融券信用交易餘額 (上市 + 上櫃)
-# 4. 抓取融資融券信用交易餘額 (上市 + 上櫃)
-python scripts/fetch_margin_daily.py
 
-# 2. 查詢 TWSE 官方 OpenAPI 盤中每 5 秒/5 分委託成交爆量時段
-df_openapi = duckdb.query(f"""
-    SELECT Time_Formatted as Time, IntervalTransaction, IntervalTradeVolume, IntervalTradeValue 
-    FROM '{BASE_URL}/twse_openapi/mi_5mins/2026-09-08.parquet' 
-    ORDER BY IntervalTradeVolume DESC 
-    LIMIT 5
-""").df()
-print("\n=== TWSE 官方盤中成交爆量時段 ===")
-print(df_openapi)
+print(df_broker)
 ```
-# 4. 抓取本益比、殖利率與股價淨值比 (上市 + 上櫃)
-# 5. 抓取本益比、殖利率與股價淨值比 (上市 + 上櫃)
-python scripts/fetch_valuation_daily.py
+
+### 3. 期交所期貨大額未平倉與借券賣出避險指標
+
+> **策略邏輯**：大盤風向看期貨淨未平倉，個股潛在空方與避險賣壓看 TWSE 借券賣出（SBL）餘額與還券動態。
+
+```python
+import duckdb
+
+BASE_URL = "https://stocks.blackboxop.eu.cc/data"
+DATE = "2026-09-08"
+
+# 1. 查詢台指期外資與投信未平倉口數
+df_futures = duckdb.query(f"""
+    SELECT Commodity, Institution, Net_Volume, OI_Long_Volume, OI_Short_Volume, OI_Net_Volume
+    FROM '{BASE_URL}/taifex/institutional/{DATE}.parquet'
+    WHERE Commodity = '臺股期貨'
+""").df()
+print("=== 台指期大額法人未平倉 ===")
+print(df_futures)
+
+# 2. 查詢大型權值股借券賣出 (SBL) 還券與餘額
+df_sbl = duckdb.query(f"""
+    SELECT Ticker, Name, SBL_Daily_Return / 1000 AS Return_K, SBL_Daily_Sell / 1000 AS Sell_K, SBL_Balance / 1000 AS Balance_K
+    FROM '{BASE_URL}/margin/sbl/{DATE}.parquet'
+    WHERE Ticker IN ('2330', '2317', '2454', '2382')
+    ORDER BY Balance_K DESC
+""").df()
+print("\n=== 權值股借券賣出狀況 ===")
+print(df_sbl)
+```
+
+> [!NOTE]
+> 更多實戰查詢（包含集保千張大戶比例、TWSE 盤中 5 分委託爆量時段、除權息現金股利排行等），請參閱 [`query_example.py`](query_example.py)。
 
 ---
-# 5. 抓取月營收彙總 (上市 + 上櫃)
-python scripts/fetch_monthly_revenue.py
-# 6. 抓取集保戶股權分散與千張大戶持股比例 (TDCC)
-python scripts/fetch_tdcc_distribution.py
 
-## 🛡️ 智能 Checkpoint 與斷點續傳
-# 6. 抓取季報損益與每股盈餘 EPS (上市 + 上櫃)
-python scripts/fetch_quarterly_eps.py
-# 7. 抓取即將除權除息預告表與計算結果 (TWSE)
-python scripts/fetch_dividends.py
+## 📈 每日盤後量化日報
 
-1. **優先採集 1 分線**：
-   抓取前優先請求 1 分線；若標的無分時成交紀錄，無縫回退至日線，兼顧高頻精度與全市場覆蓋率。
-2. **自動跳過已更新標的**：
-   抓取前檢查本地 Parquet，若最新數據已涵蓋今日收盤價（盤後 14:00 後），自動跳過，避免重複網路呼叫與 API 頻率限制。
-3. **批次原子落盤 (Batch Flush)**：
-   預設每 20 檔（可自訂 `--batch-size`）統一寫入 `by_ticker`、`by_date` 與 `by_year`，避免記憶體超載，並確保中斷時各維度資料一致。
-4. **年份維度智慧彙整 (GitHub 100MB 限制保護)**：
-   `by_year` 於寫入時自動將分時數據彙整為單日日線 OHLCV，確保年檔體積極輕量，永久避免觸碰 GitHub 單檔 100MB 上傳上限。
-# 7. 抓取券商分點主力買賣明細 (支援指定個股或匯出 Parquet)
-# 8. 抓取券商分點主力買賣明細 (支援指定個股或匯出 Parquet)
-python scripts/fetch_broker_trading.py --stocks 2330 2317 2454 --period 1 --export-parquet
+專案內建自動化日報生成器 [`scripts/generate_daily_report.py`](scripts/generate_daily_report.py)，每日收盤後自動整合跨維度數據，於 [`reports/`](reports/) 目錄產出 Markdown 格式之大盤量化日報：
 
-### 命令列常用指令
-# 8. 抓取大盤與各類股指數報表
-python scripts/fetch_market_indices.py
-# 9. 抓取月營收彙總 (上市 + 上櫃)
-python scripts/fetch_monthly_revenue.py
+### 日報重點涵蓋內容：
+1. **大盤與各類股核心指數**（加權指數、寶島指數、臺灣50、各產業類股漲跌幅）
+2. **期交所三大法人期貨未平倉**（台指期、小台、電子期外資多空風向球）
+3. **現貨三大法人買賣超動向**（上市與上櫃外資、投信、自營合計）
+4. **信用籌碼與借券避險力道**（融資融券增減與 SBL 借券總量變化）
+5. **法人同步大買精選 TOP 10**（外資與投信合力加碼之強勢標的）
+6. **借券賣出空單大回補 TOP 10**（SBL 還券大增、潛在軋空與反彈標的）
+
+👉 查看最新產生日報範例：[`reports/2026-09-09_market_summary.md`](reports/2026-09-09_market_summary.md)
+
+---
+
+## 🛠️ 本地命令列操作指南
+
+### 1. 例行盤後增量同步
 
 ```bash
-# 1. 一般增量同步 (優先抓 1分K，無則抓日線，自動跳過今日已抓個股)
+# 增量抓取技術面 1分K / 日線行情 (內建 Checkpoint 自動跳過今日已抓個股)
 python scripts/sync_all_partitions.py
-# 10. 抓取季報損益與每股盈餘 EPS (上市 + 上櫃)
+
+# 採集 TWSE OpenAPI 盤中 5 分/5 秒委託成交資料
+python scripts/fetch_twse_openapi_5m.py
+
+# 採集現貨三大法人買賣超 (上市 + 上櫃)
+python scripts/fetch_institutional_daily.py
+
+# 採集融資融券信用交易餘額 (上市 + 上櫃)
+python scripts/fetch_margin_daily.py
+
+# 採集每日本益比、股價淨值比與殖利率
+python scripts/fetch_valuation_daily.py
+
+# 採集期交所三大法人大額期貨部位
+python scripts/fetch_taifex_institutional.py
+
+# 採集 TWSE 借券賣出與信用總量管制
+python scripts/fetch_sbl_daily.py
+
+# 採集券商主力分點進出 (指定核心標的並匯出 Parquet)
+python scripts/fetch_broker_trading.py --stocks 2330 2317 2454 2308 2382 --export-parquet
+
+# 產出今日盤後量化總覽日報
+python scripts/generate_daily_report.py
+```
+
+### 2. 歷史資料批量回補 (Historical Backfill)
+
+```bash
+# 批次回補最近 30 個交易日之三大法人、資券與本益比資料 (自動斷點續傳)
+python scripts/backfill_history.py --days 30
+
+# 指定日期區間回補
+python scripts/backfill_history.py --start 2026-08-01 --end 2026-09-08
+
+# 全量回補多年基本面 (32 個月月營收 + 10 季 EPS 損益歷史)
+python scripts/backfill_fundamental.py
+```
+
+### 3. 週度與月度專項更新
+
+```bash
+# 更新全台股上市櫃標的名冊 (每週日定期自動執行)
+python scripts/fetch_tw_stock_list.py
+
+# 抓取集保戶股權分散表與千張大戶比例 (每週五盤後)
+python scripts/fetch_tdcc_distribution.py
+
+# 抓取上市櫃月營收彙總 (每月 1~10 號)
+python scripts/fetch_monthly_revenue.py
+
+# 抓取季報損益表與每股盈餘 EPS (每季財報公布期)
 python scripts/fetch_quarterly_eps.py
 
-# 2. 抓取 TWSE OpenAPI 官方 5 分盤中委託成交資料
-python scripts/fetch_twse_openapi_5m.py
-# 11. 抓取大盤與各類股指數報表
-python scripts/fetch_market_indices.py
+# 抓取即將除權除息預告表與計算結果
+python scripts/fetch_dividends.py
+```
 
-# 3. 全歷史初始化
-python scripts/sync_all_partitions.py --init
+### 4. 執行本地 / 遠端完整驗證範例
 
-# 4. 強制更新 (忽略 Checkpoint，強制重新抓取覆蓋)
-python scripts/sync_all_partitions.py --force
-
-# 5. 抽樣測試前 10 檔
-python scripts/sync_all_partitions.py --limit 10
-# 9. 執行 DuckDB 跨維度查詢範例
-# 12. 執行 DuckDB 跨維度 9 大查詢範例
+```bash
+# 執行 11 大維度實戰 SQL 查詢驗證腳本
 python query_example.py
 ```
 
 ---
 
-## ⚠️ 免責聲明 (Disclaimer)
+## ⚠️ 免責聲明 & License
 
-1. **非投資建議**：本專案（包含所有腳本代碼、自動化工作流、Parquet 資料庫檔案、說明文件及公開 API）僅供學術研究、技術交流與量化回測學習使用，**不構成任何形式之投資建議、財務諮詢、買賣推薦或操盤指引**。
-2. **資料精確度與即時性**：本專案數據彙整自公開網路行情與證交所/櫃買中心開放資料，可能因來源端更新時差、網路延遲、API 異動或資料清洗邏輯而存在延遲、缺漏或誤差。專案維護者不對資料之即時性、正確性、完整性或特定用途的有效性作任何明示或暗示之保證。
-3. **投資風險與損益自負**：金融市場具高度風險。任何使用者依據本專案內容或產出數據所進行之投資、交易或策略操作，其產生之所有直接、間接損益與風險，**概由使用者全權承擔**，專案維護者與貢獻者概不承擔任何法律、民刑事賠償或連帶責任。
+> [!WARNING]
+> ### 免責聲明 (Disclaimer)
+> 1. **非投資建議**：本專案（包含所有腳本原始碼、自動化工作流、Parquet 數據庫檔案、盤後量化日報及公開 CDN API）僅供學術研究、技術交流與量化回測學習使用，**不構成任何形式之投資建議、財務諮詢、買賣推薦或操盤指引**。
+> 2. **數據準確度與延遲**：本專案數據彙整自公開網路行情及各大官方機構開放資料，可能因來源端更新時差、網路延遲或格式異動而存在些許落後或誤差。專案維護者不對資料之即時性、完整性或特定策略之有效性作任何明示或暗示之保證。
+> 3. **投資風險與損益自負**：金融市場具高度風險。任何使用者依據本專案內容或產出數據所進行之投資或交易行為，其產生之所有直接、間接損益與風險，**概由使用者全權承擔**。
 
----
+### 資料來源與權利宣告
+- 數據來源為台灣證券交易所 (TWSE)、證券櫃檯買賣中心 (TPEx)、臺灣期貨交易所 (TAIFEX)、臺灣集中保管結算所 (TDCC)、公開資訊觀測站 (MOPS) 及相關公開行情資訊，相關智財權均歸原發布機構所有。
 
-## 📄 License
-This project is open-source and licensed under the [MIT License](LICENSE).
-資料來源為台灣證券交易所 (TWSE)、證券櫃檯買賣中心 (TPEx) 及公開行情數據，相關權利均歸原機構所有。
-資料來源為台灣證券交易所 (TWSE)、證券櫃檯買賣中心 (TPEx)、公開資訊觀測站 (MOPS) 及公開行情數據，相關權利均歸原機構所有。
-資料來源為台灣證券交易所 (TWSE)、證券櫃檯買賣中心 (TPEx)、臺灣集中保管結算所 (TDCC)、公開資訊觀測站 (MOPS) 及公開行情數據，相關權利均歸原機構所有。
+### 授權條款
+- 本專案代碼與架構遵循 [MIT License](LICENSE) 開源授權。
