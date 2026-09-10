@@ -1,19 +1,19 @@
 """
-台股基本面歷史資料回補引擎 (Fundamental Backfill Engine)
-支援回補:
-1. 歷史每月營業收入 (2024-01 至 2026-08, 依 YYYY-MM.parquet 儲存)
-2. 歷史季報 EPS 與損益表 (2024_Q1 至 2026_Q2, 依 YYYY_QX.parquet 儲存)
-整合 FinMind 與公開資訊觀測站公開標準，支援多執行緒並行抓取與自動合併
+台股近 5 年全市場基本面歷史資料回補引擎 (5-Year Fundamental Backfill Engine)
+涵蓋:
+1. 歷史月營收: 2021-01 至 2026-08 (共 68 個月份，全市場上市櫃普通股)
+2. 歷史季報 EPS 與損益: 2021_Q1 至 2026_Q2 (共 22 個季度，全市場上市櫃普通股)
+資料來源: 臺灣證券交易所公開資訊觀測站 (MOPS) 官方彙總報表
 """
 import os
 import sys
 import time
+import io
 import argparse
 import requests
 import pandas as pd
 import numpy as np
 from datetime import datetime
-from concurrent.futures import ThreadPoolExecutor
 
 REVENUE_DIR = "data/fundamental/revenue"
 EPS_DIR = "data/fundamental/eps"
@@ -23,20 +23,31 @@ os.makedirs(REVENUE_DIR, exist_ok=True)
 os.makedirs(EPS_DIR, exist_ok=True)
 
 HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Referer': 'https://mopsov.twse.com.tw/mops/web/t163sb04',
 }
 
-def get_target_stocks(limit=100, specific_symbols=None):
-    if not os.path.exists(STOCK_LIST_PATH):
-        return ['2330', '2317', '2454', '2308', '2382']
-    
-    df = pd.read_parquet(STOCK_LIST_PATH)
-    if specific_symbols:
-        return [str(s).strip() for s in specific_symbols]
-    
-    if limit and limit > 0:
-        return df['Symbol'].head(limit).tolist()
-    return df['Symbol'].tolist()
+def clean_num(val):
+    if val is None or pd.isna(val):
+        return 0
+    s = str(val).replace(',', '').strip()
+    if not s or s in ('--', '-'):
+        return 0
+    try:
+        return int(float(s))
+    except ValueError:
+        return 0
+
+def clean_float(val):
+    if val is None or pd.isna(val):
+        return 0.0
+    s = str(val).replace(',', '').strip()
+    if not s or s in ('--', '-'):
+        return 0.0
+    try:
+        return round(float(s), 4)
+    except ValueError:
+        return 0.0
 
 def get_stock_meta():
     if os.path.exists(STOCK_LIST_PATH):
@@ -56,207 +67,196 @@ def get_stock_meta():
     return {}
 
 # -------------------------------------------------------------
-# 1. 歷史月營收回補
+# 1. 回補近 5 年月營收 (2021-01 ~ 2026-08)
 # -------------------------------------------------------------
-def fetch_stock_monthly_revenue(symbol, start_date='2023-01-01'):
-    url = f"https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockMonthRevenue&data_id={symbol}&start_date={start_date}"
-    try:
-        r = requests.get(url, headers=HEADERS, timeout=10)
-        if r.status_code == 200:
-            return r.json().get('data', [])
-    except Exception:
-        pass
-    return []
-
-def backfill_monthly_revenues(symbols, max_workers=8):
-    print(f"[{datetime.now()}] 開始並行回補 {len(symbols)} 檔標的之歷史月營收 (2024-01 ~ 2026-08)...")
+def backfill_5y_revenue(start_year=2021, end_year=2026, force=False):
     stock_meta = get_stock_meta()
-    all_rows = []
+    months_to_run = []
+    for y in range(start_year, end_year + 1):
+        max_m = 8 if y == 2026 else 12
+        for m in range(1, max_m + 1):
+            months_to_run.append((y, m))
 
-    def worker(sym):
-        recs = fetch_stock_monthly_revenue(sym)
-        if not recs:
-            return []
-        
-        df_stock = pd.DataFrame(recs)
-        df_stock.sort_values(by=['revenue_year', 'revenue_month'], inplace=True)
-        df_stock['YearMonth'] = df_stock['revenue_year'].astype(str) + '-' + df_stock['revenue_month'].astype(str).str.zfill(2)
-        
-        # 轉換為千元 (MOPS 官方標準單位)
-        df_stock['Revenue_Current'] = (df_stock['revenue'] / 1000).fillna(0).astype('int64')
-        df_stock['Revenue_Last_Month'] = df_stock['Revenue_Current'].shift(1).fillna(0).astype('int64')
-        df_stock['Revenue_Last_Year'] = df_stock['Revenue_Current'].shift(12).fillna(0).astype('int64')
-        
-        df_stock['MoM_Growth'] = ((df_stock['Revenue_Current'] - df_stock['Revenue_Last_Month']) / df_stock['Revenue_Last_Month'] * 100).replace([np.inf, -np.inf], 0).round(4).fillna(0.0)
-        df_stock['YoY_Growth'] = ((df_stock['Revenue_Current'] - df_stock['Revenue_Last_Year']) / df_stock['Revenue_Last_Year'] * 100).replace([np.inf, -np.inf], 0).round(4).fillna(0.0)
+    total = len(months_to_run)
+    print(f"[{datetime.now()}] 開始執行近 5 年歷史月營收回補 (共 {total} 個月份: 2021-01 ~ 2026-08)...")
 
-        # 累計計算
-        df_stock['Cumulative_Current'] = df_stock.groupby('revenue_year')['Revenue_Current'].cumsum()
-        df_stock['Cumulative_Last_Year'] = df_stock['Cumulative_Current'].shift(12).fillna(0).astype('int64')
-        df_stock['Cumulative_YoY_Growth'] = ((df_stock['Cumulative_Current'] - df_stock['Cumulative_Last_Year']) / df_stock['Cumulative_Last_Year'] * 100).replace([np.inf, -np.inf], 0).round(4).fillna(0.0)
-
-        meta = stock_meta.get(str(sym), {})
-        name = meta.get('Name', str(sym))
-        mkt = meta.get('Market', 'TWSE')
-        ind = meta.get('Industry', '')
-
-        rows = []
-        for _, r in df_stock.iterrows():
-            if r['YearMonth'] < '2024-01':
-                continue
-            rows.append({
-                'YearMonth': r['YearMonth'],
-                'Ticker': str(sym),
-                'Name': name,
-                'Market': mkt,
-                'Industry': ind,
-                'Revenue_Current': int(r['Revenue_Current']),
-                'Revenue_Last_Month': int(r['Revenue_Last_Month']),
-                'Revenue_Last_Year': int(r['Revenue_Last_Year']),
-                'MoM_Growth': float(r['MoM_Growth']),
-                'YoY_Growth': float(r['YoY_Growth']),
-                'Cumulative_Current': int(r['Cumulative_Current']),
-                'Cumulative_Last_Year': int(r['Cumulative_Last_Year']),
-                'Cumulative_YoY_Growth': float(r['Cumulative_YoY_Growth']),
-                'Note': '-'
-            })
-        return rows
-
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        for res in executor.map(worker, symbols):
-            all_rows.extend(res)
-
-    if not all_rows:
-        print("未取得任何月營收資料。")
-        return
-
-    full_df = pd.DataFrame(all_rows)
-    # 按月份分組寫入各月份 parquet
     saved_count = 0
-    for ym, group in full_df.groupby('YearMonth'):
-        out_file = os.path.join(REVENUE_DIR, f"{ym}.parquet")
-        if os.path.exists(out_file):
-            existing_df = pd.read_parquet(out_file)
-            # 合併，依 Ticker 去重保留最新
-            combined = pd.concat([existing_df, group], ignore_index=True)
-            combined.drop_duplicates(subset=['Ticker'], keep='last', inplace=True)
-            combined.sort_values(by=['Market', 'Ticker'], inplace=True)
-            combined.to_parquet(out_file, engine='pyarrow', compression='snappy', index=False)
-        else:
-            group_sorted = group.sort_values(by=['Market', 'Ticker'])
-            group_sorted.to_parquet(out_file, engine='pyarrow', compression='snappy', index=False)
-        saved_count += 1
+    for idx, (year, month) in enumerate(months_to_run, 1):
+        ym_str = f"{year}-{month:02d}"
+        out_file = os.path.join(REVENUE_DIR, f"{ym_str}.parquet")
 
-    print(f"[{datetime.now()}] 成功回補/更新 {saved_count} 個月份之歷史月營收資料至 {REVENUE_DIR}")
-
-# -------------------------------------------------------------
-# 2. 歷史季報 EPS 與損益表回補
-# -------------------------------------------------------------
-def fetch_stock_financial_statements(symbol, start_date='2024-01-01'):
-    url = f"https://api.finmindtrade.com/api/v4/data?dataset=TaiwanStockFinancialStatements&data_id={symbol}&start_date={start_date}"
-    try:
-        r = requests.get(url, headers=HEADERS, timeout=10)
-        if r.status_code == 200:
-            return r.json().get('data', [])
-    except Exception:
-        pass
-    return []
-
-def backfill_quarterly_eps(symbols, max_workers=8):
-    print(f"[{datetime.now()}] 開始並行回補 {len(symbols)} 檔標的之歷史季報 EPS 與損益 (2024_Q1 ~ 2026_Q2)...")
-    stock_meta = get_stock_meta()
-    all_rows = []
-
-    def worker(sym):
-        recs = fetch_stock_financial_statements(sym)
-        if not recs:
-            return []
-
-        df_stock = pd.DataFrame(recs)
-        if df_stock.empty or 'type' not in df_stock.columns:
-            return []
-
-        # 篩選 EPS、營收、營業利益與淨利
-        meta = stock_meta.get(str(sym), {})
-        name = meta.get('Name', str(sym))
-        mkt = meta.get('Market', 'TWSE')
-        ind = meta.get('Industry', '')
-
-        rows = []
-        for dt_str, group in df_stock.groupby('date'):
-            # 解析年份與季度
+        if not force and os.path.exists(out_file):
             try:
-                dt = datetime.strptime(str(dt_str).strip(), '%Y-%m-%d')
-                year = dt.year
-                month = dt.month
-                quarter = (month - 1) // 3 + 1
-                period = f"{year}_Q{quarter}"
+                cur_df = pd.read_parquet(out_file)
+                if len(cur_df) >= 1500:
+                    print(f"  [{idx}/{total}] {ym_str} 已存在完整資料 ({len(cur_df)} 檔)，略過。")
+                    continue
             except Exception:
-                continue
+                pass
 
-            # 提取各項財務指標
-            val_map = group.set_index('type')['value'].to_dict()
-            eps = round(float(val_map.get('EPS', 0.0)), 4) if 'EPS' in val_map else 0.0
-            rev = int(val_map.get('Revenue', 0) / 1000) if 'Revenue' in val_map else 0
-            op_profit = int(val_map.get('OperatingIncome', 0) / 1000) if 'OperatingIncome' in val_map else 0
-            net_income = int(val_map.get('IncomeAfterTaxes', 0) / 1000) if 'IncomeAfterTaxes' in val_map else 0
+        print(f"  [{idx}/{total}] 正在抓取 {ym_str} 全市場月營收 (MOPS)...")
+        roc_year = year - 1911
+        rows = []
 
-            rows.append({
-                'Year': year,
-                'Quarter': quarter,
-                'Period': period,
-                'Ticker': str(sym),
-                'Name': name,
-                'Market': mkt,
-                'Industry': ind,
-                'EPS': eps,
-                'Operating_Revenue': rev,
-                'Operating_Profit': op_profit,
-                'Non_Operating_Income': 0,
-                'Net_Income': net_income
-            })
-        return rows
+        for market, mkt_label in [('sii', 'TWSE'), ('otc', 'TPEx')]:
+            url = f"https://mopsov.twse.com.tw/nas/t21/{market}/t21sc03_{roc_year}_{month}_0.html"
+            try:
+                r = requests.get(url, headers=HEADERS, timeout=20)
+                if r.status_code != 200:
+                    continue
+                r.encoding = 'cp950'
+                dfs = pd.read_html(io.StringIO(r.text))
+                for df in dfs:
+                    if df.shape[1] >= 11:
+                        sub = df.copy()
+                        sub.columns = range(sub.shape[1])
+                        sub = sub[sub[0].astype(str).str.match(r'^\d{4}$')]
+                        for _, row in sub.iterrows():
+                            sym = str(row[0]).strip()
+                            meta = stock_meta.get(sym, {})
+                            name = meta.get('Name') or str(row[1]).strip()
+                            ind = meta.get('Industry', '')
 
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        for res in executor.map(worker, symbols):
-            all_rows.extend(res)
+                            rows.append({
+                                'YearMonth': ym_str,
+                                'Ticker': sym,
+                                'Name': name,
+                                'Market': mkt_label,
+                                'Industry': ind,
+                                'Revenue_Current': clean_num(row[2]),
+                                'Revenue_Last_Month': clean_num(row[3]),
+                                'Revenue_Last_Year': clean_num(row[4]),
+                                'MoM_Growth': clean_float(row[5]),
+                                'YoY_Growth': clean_float(row[6]),
+                                'Cumulative_Current': clean_num(row[7]),
+                                'Cumulative_Last_Year': clean_num(row[8]),
+                                'Cumulative_YoY_Growth': clean_float(row[9]),
+                                'Note': str(row[10]).strip() if pd.notna(row[10]) else '-'
+                            })
+                time.sleep(0.3)
+            except Exception as e:
+                print(f"    {market} 抓取異常: {e}")
 
-    if not all_rows:
-        print("未取得任何季報 EPS 資料。")
-        return
-
-    full_df = pd.DataFrame(all_rows)
-    saved_count = 0
-    for period, group in full_df.groupby('Period'):
-        out_file = os.path.join(EPS_DIR, f"{period}.parquet")
-        if os.path.exists(out_file):
-            existing_df = pd.read_parquet(out_file)
-            combined = pd.concat([existing_df, group], ignore_index=True)
-            combined.drop_duplicates(subset=['Ticker'], keep='last', inplace=True)
-            combined.sort_values(by=['Market', 'Ticker'], inplace=True)
-            combined.to_parquet(out_file, engine='pyarrow', compression='snappy', index=False)
+        if rows:
+            df_out = pd.DataFrame(rows)
+            df_out.drop_duplicates(subset=['Ticker'], keep='last', inplace=True)
+            df_out.sort_values(by=['Market', 'Ticker'], inplace=True)
+            df_out.to_parquet(out_file, engine='pyarrow', compression='snappy', index=False)
+            saved_count += 1
+            print(f"    成功儲存 {ym_str}.parquet ({len(df_out)} 檔標的)")
         else:
-            group_sorted = group.sort_values(by=['Market', 'Ticker'])
-            group_sorted.to_parquet(out_file, engine='pyarrow', compression='snappy', index=False)
-        saved_count += 1
+            print(f"    {ym_str} 未取得資料")
 
-    print(f"[{datetime.now()}] 成功回補/更新 {saved_count} 個季度之歷史季報 EPS 至 {EPS_DIR}")
+    print(f"[{datetime.now()}] 歷史月營收回補完成，共更新 {saved_count} 個月份檔案。\n")
 
-def run_fundamental_backfill(limit=100, symbols=None):
-    target_symbols = get_target_stocks(limit=limit, specific_symbols=symbols)
-    print(f"[{datetime.now()}] 準備針對 {len(target_symbols)} 檔核心權值標的執行全量歷史基本面回補...")
-    
-    # 1. 回補歷史月營收 (32 個月份)
-    backfill_monthly_revenues(target_symbols)
-    
-    # 2. 回補歷史季報 EPS (10 個季度)
-    backfill_quarterly_eps(target_symbols)
+# -------------------------------------------------------------
+# 2. 回補近 5 年季報 EPS 與損益 (2021_Q1 ~ 2026_Q2)
+# -------------------------------------------------------------
+def backfill_5y_eps(start_year=2021, end_year=2026, force=False):
+    stock_meta = get_stock_meta()
+    quarters_to_run = []
+    for y in range(start_year, end_year + 1):
+        max_q = 2 if y == 2026 else 4
+        for q in range(1, max_q + 1):
+            quarters_to_run.append((y, q))
 
-    print(f"\n[{datetime.now()}] 基本面歷史數據回補流程全部完成！")
+    total = len(quarters_to_run)
+    print(f"[{datetime.now()}] 開始執行近 5 年歷史季報 EPS 回補 (共 {total} 個季度: 2021_Q1 ~ 2026_Q2)...")
+
+    saved_count = 0
+    for idx, (year, quarter) in enumerate(quarters_to_run, 1):
+        period_str = f"{year}_Q{quarter}"
+        out_file = os.path.join(EPS_DIR, f"{period_str}.parquet")
+
+        if not force and os.path.exists(out_file):
+            try:
+                cur_df = pd.read_parquet(out_file)
+                if len(cur_df) >= 1500:
+                    print(f"  [{idx}/{total}] {period_str} 已存在完整資料 ({len(cur_df)} 檔)，略過。")
+                    continue
+            except Exception:
+                pass
+
+        print(f"  [{idx}/{total}] 正在抓取 {period_str} 全市場季報損益與 EPS (MOPS)...")
+        roc_year = year - 1911
+        rows = []
+
+        for typek, mkt_label in [('sii', 'TWSE'), ('otc', 'TPEx')]:
+            payload = {
+                'encodeURIComponent': '1',
+                'step': '1',
+                'firstin': '1',
+                'off': '1',
+                'TYPEK': typek,
+                'year': str(roc_year),
+                'season': str(quarter)
+            }
+            try:
+                r = requests.post('https://mopsov.twse.com.tw/mops/web/ajax_t163sb04', data=payload, headers=HEADERS, timeout=25)
+                if r.status_code != 200 or 'SECURITY REASONS' in r.text:
+                    print(f"    {typek} 請求失敗 (status={r.status_code})")
+                    continue
+                
+                dfs = pd.read_html(io.StringIO(r.text))
+                for df in dfs:
+                    ticker_col = next((c for c in df.columns if '代號' in str(c)), None)
+                    eps_col = next((c for c in df.columns if any(k in str(c) for k in ['每股盈餘', '基本每股', 'EPS'])), None)
+                    if ticker_col and eps_col:
+                        rev_col = next((c for c in df.columns if '營業收入' in str(c)), None)
+                        op_col = next((c for c in df.columns if '營業利益' in str(c)), None)
+                        net_col = next((c for c in df.columns if any(k in str(c) for k in ['本期淨利', '稅後淨利', '本期稅後'])), None)
+                        name_col = next((c for c in df.columns if '名稱' in str(c)), None)
+
+                        sub = df[df[ticker_col].astype(str).str.match(r'^\d{4}$')]
+                        for _, row in sub.iterrows():
+                            sym = str(row[ticker_col]).strip()
+                            meta = stock_meta.get(sym, {})
+                            name = meta.get('Name') or (str(row[name_col]).strip() if name_col and pd.notna(row[name_col]) else sym)
+                            ind = meta.get('Industry', '')
+
+                            rows.append({
+                                'Year': year,
+                                'Quarter': quarter,
+                                'Period': period_str,
+                                'Ticker': sym,
+                                'Name': name,
+                                'Market': mkt_label,
+                                'Industry': ind,
+                                'EPS': clean_float(row[eps_col]),
+                                'Operating_Revenue': clean_num(row[rev_col]) if rev_col else 0,
+                                'Operating_Profit': clean_num(row[op_col]) if op_col else 0,
+                                'Non_Operating_Income': 0,
+                                'Net_Income': clean_num(row[net_col]) if net_col else 0
+                            })
+                time.sleep(0.5)
+            except Exception as e:
+                print(f"    {typek} 解析異常: {e}")
+
+        if rows:
+            df_out = pd.DataFrame(rows)
+            df_out.drop_duplicates(subset=['Ticker'], keep='last', inplace=True)
+            df_out.sort_values(by=['Market', 'Ticker'], inplace=True)
+            df_out.to_parquet(out_file, engine='pyarrow', compression='snappy', index=False)
+            saved_count += 1
+            print(f"    成功儲存 {period_str}.parquet ({len(df_out)} 檔標的)")
+        else:
+            print(f"    {period_str} 未取得資料")
+
+    print(f"[{datetime.now()}] 歷史季報 EPS 回補完成，共更新 {saved_count} 個季度檔案。\n")
+
+def run_fundamental_backfill(start_year=2021, end_year=2026, force=False):
+    t0 = time.time()
+    backfill_5y_revenue(start_year=start_year, end_year=end_year, force=force)
+    backfill_5y_eps(start_year=start_year, end_year=end_year, force=force)
+    print(f"[{datetime.now()}] 全部基本面歷史回補執行完畢！總耗時: {(time.time() - t0):.1f} 秒")
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="台股基本面歷史資料回補引擎 (月營收 + 季報 EPS)")
-    parser.add_argument("--limit", type=int, default=100, help="回補標的數量 (依權重由大至小，預設: 100)")
-    parser.add_argument("--symbols", nargs="+", default=None, help="指定回補之股票代號清單")
+    parser = argparse.ArgumentParser(description="近 5 年全市場基本面歷史資料回補 (2021-2026)")
+    parser.add_argument("--start-year", type=int, default=2021, help="回補起始年份 (預設: 2021)")
+    parser.add_argument("--end-year", type=int, default=2026, help="回補結束年份 (預設: 2026)")
+    parser.add_argument("--revenue-only", action="store_true", help="僅回補月營收")
+    parser.add_argument("--eps-only", action="store_true", help="僅回補季報 EPS")
+    parser.add_argument("--force", action="store_true", help="強制重新抓取覆寫既有檔案")
     args = parser.parse_args()
-    run_fundamental_backfill(limit=args.limit, symbols=args.symbols)
+
+    run_fundamental_backfill(start_year=args.start_year, end_year=args.end_year, force=args.force)
