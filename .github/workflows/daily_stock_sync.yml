@@ -111,12 +111,10 @@ jobs:
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add data/
           git add data/ reports/
           if git diff --staged --quiet; then
             echo "今日無新交易資料。"
           else
-            git commit -m "Auto: Update stock parquet dataset (OHLCV, Institutional, Margin, Valuation, Revenue, EPS, Broker, TDCC, Dividends) [skip ci]"
             git commit -m "Auto: Update stock parquet dataset & daily quant report (OHLCV, TAIFEX, SBL, Institutional, Margin, Valuation, Revenue, EPS, Broker, TDCC, Dividends) [skip ci]"
             git push
           fi

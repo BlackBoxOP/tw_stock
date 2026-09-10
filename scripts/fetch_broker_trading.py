@@ -443,13 +443,6 @@ if __name__ == "__main__":
     target_periods = args.periods if args.periods else ([args.period] if args.period is not None else [1])
 
     for stk in args.stocks:
-        print(f"正在抓取 {stk} 分點主力 (週期={args.period})...")
-        res = fetch_broker_trading(stk, period=args.period)
-        if res:
-            meta = res['meta']
-            print(f"  {stk} 買超前3: {[b['broker_name'] + '(' + str(b['net_qty']) + '張)' for b in res['buy_list'][:3]]}")
-            print(f"  {stk} 賣超前3: {[s['broker_name'] + '(' + str(s['net_qty']) + '張)' for s in res['sell_list'][:3]]}")
-            print(f"  合計買超: {meta.get('total_buy')} 張, 均價: {meta.get('avg_buy_cost')} | 合計賣超: {meta.get('total_sell')} 張, 均價: {meta.get('avg_sell_cost')}")
         for p in target_periods:
             print(f"正在抓取 {stk} 分點主力 (週期={p})...")
             res = fetch_broker_trading(stk, period=p)
