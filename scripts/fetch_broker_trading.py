@@ -435,18 +435,22 @@ def export_to_parquet(target_date=None):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="抓取並查詢券商分點主力資料 (Fubon DJ)")
     parser.add_argument("--stocks", nargs="+", default=["2330", "2317", "2454"], help="指定股票代號清單")
-    parser.add_argument("--period", type=int, default=1, help="週期: 1=近1日, 2=近5日, 3=近10日, 4=近20日")
+    parser.add_argument("--period", type=int, default=None, help="週期: 1=近1日, 2=近5日, 3=近10日, 4=近20日, 6=近60日, 8=近240日")
+    parser.add_argument("--periods", type=int, nargs="+", default=None, help="多週期清單 (例: 1 2 4 6 8)")
     parser.add_argument("--export-parquet", action="store_true", help="是否匯出為 Parquet")
     args = parser.parse_args()
 
+    target_periods = args.periods if args.periods else ([args.period] if args.period is not None else [1])
+
     for stk in args.stocks:
-        print(f"正在抓取 {stk} 分點主力 (週期={args.period})...")
-        res = fetch_broker_trading(stk, period=args.period)
-        if res:
-            meta = res['meta']
-            print(f"  {stk} 買超前3: {[b['broker_name'] + '(' + str(b['net_qty']) + '張)' for b in res['buy_list'][:3]]}")
-            print(f"  {stk} 賣超前3: {[s['broker_name'] + '(' + str(s['net_qty']) + '張)' for s in res['sell_list'][:3]]}")
-            print(f"  合計買超: {meta.get('total_buy')} 張, 均價: {meta.get('avg_buy_cost')} | 合計賣超: {meta.get('total_sell')} 張, 均價: {meta.get('avg_sell_cost')}")
+        for p in target_periods:
+            print(f"正在抓取 {stk} 分點主力 (週期={p})...")
+            res = fetch_broker_trading(stk, period=p)
+            if res:
+                meta = res['meta']
+                print(f"  [{stk} P{p}] 買超前3: {[b['broker_name'] + '(' + str(b['net_qty']) + '張)' for b in res['buy_list'][:3]]}")
+                print(f"  [{stk} P{p}] 賣超前3: {[s['broker_name'] + '(' + str(s['net_qty']) + '張)' for s in res['sell_list'][:3]]}")
+                print(f"  合計買超: {meta.get('total_buy')} 張, 均價: {meta.get('avg_buy_cost')} | 合計賣超: {meta.get('total_sell')} 張, 均價: {meta.get('avg_sell_cost')}")
 
     if args.export_parquet:
         export_to_parquet()

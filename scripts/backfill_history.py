@@ -59,7 +59,7 @@ def run_backfill(days=10, start=None, end=None, delay=1.0, overwrite=False):
         print("未找到符合條件之交易日。")
         return
 
-    print(f"[{datetime.now()}] 準備回補 {len(trading_days)} 個交易日之多維度歷史資料 (TWSE+TPEx 三大法人、融資融券、本益比殖利率、指數)...")
+    print(f"[{datetime.now()}] 準備回補 {len(trading_days)} 個交易日之多維度歷史資料 (TWSE+TPEx 三大法人、融資融券、本益比殖利率、指數、期交所法人、借券賣出)...")
     print(f"涵蓋日期區間: {trading_days[0]} ~ {trading_days[-1]} (overwrite={overwrite})\n")
 
     for i, dt in enumerate(reversed(trading_days), 1):

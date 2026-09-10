@@ -166,3 +166,4 @@ if __name__ == "__main__":
     parser.add_argument("--date", type=str, default=None, help="交易日期 (格式: YYYY-MM-DD)")
     args = parser.parse_args()
     fetch_and_save_taifex(args.date)
+
