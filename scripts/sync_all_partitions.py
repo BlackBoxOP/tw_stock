@@ -117,13 +117,35 @@ def should_skip_ticker(ticker, is_init=False, force=False):
                 return True, freq, f"日線已包含今日最新資料 ({latest_date})"
         return False, freq, latest_ts
 
-def fetch_ticker_data(stock, ticker, is_init=False):
+def fetch_ticker_data(stock, ticker, is_init=False, latest_ts=None):
     """
-    核心抓取邏輯：優先嘗試 1 分線資料 (period='7d', interval='1m')，
-    若無資料 (empty 或異常) 則回退至日線 (interval='1d')
+    核心抓取邏輯：動態增量補齊
+    1. 優先嘗試 1 分線資料：
+       - 若初次抓取或強制更新：抓取上限 7 天 (period='7d')
+       - 若已有近期歷史：依據差距天數動態計算 period (日常同步只需 2d，跨週末或連假動態補齊)，大幅節省 70% 網路頻寬與時間！
+    2. 若標的無 1 分線資料 (如冷門標的、權證等)，回退至日線 (interval='1d')
     """
+    today = datetime.now().date()
+    if is_init or latest_ts is None:
+        period_1m = "7d"
+        period_1d = "max" if is_init else "5d"
+    else:
+        last_date = latest_ts.date() if hasattr(latest_ts, 'date') else latest_ts
+        gap_days = max(0, (today - last_date).days)
+        if gap_days <= 1:
+            # 昨天已抓或今日更新：只需抓 2 天 (涵蓋昨今兩日，快速補齊並防呆覆蓋集合競價)
+            period_1m = "2d"
+            period_1d = "5d"
+        elif gap_days <= 6:
+            # 跨週末或連假：動態依差距天數補齊
+            period_1m = f"{min(gap_days + 1, 7)}d"
+            period_1d = f"{max(gap_days + 2, 5)}d"
+        else:
+            # 超過 7 天：達到 yfinance 1 分線提供之上限
+            period_1m = "7d"
+            period_1d = "1mo"
+
     # 1. 優先嘗試 1 分線
-    period_1m = "7d"
     try:
         df_1m = stock.history(period=period_1m, interval="1m")
         if not df_1m.empty:
@@ -132,7 +154,6 @@ def fetch_ticker_data(stock, ticker, is_init=False):
         pass
 
     # 2. 無 1 分線時回退至日線
-    period_1d = "max" if is_init else "5d"
     try:
         df_1d = stock.history(period=period_1d, interval="1d")
         if not df_1d.empty:
@@ -205,7 +226,7 @@ def run_sync(is_init=False, force=False, limit=None, batch_size=20):
     synced_1d = 0
 
     for idx, ticker in enumerate(tickers, 1):
-        skip, existing_freq, reason = should_skip_ticker(ticker, is_init=is_init, force=force)
+        skip, existing_freq, latest_ts = should_skip_ticker(ticker, is_init=is_init, force=force)
         if skip:
             skipped_count += 1
             if idx % 50 == 0 or idx == len(tickers):
@@ -214,7 +235,7 @@ def run_sync(is_init=False, force=False, limit=None, batch_size=20):
 
         try:
             stock = yf.Ticker(ticker)
-            df, freq = fetch_ticker_data(stock, ticker, is_init=is_init)
+            df, freq = fetch_ticker_data(stock, ticker, is_init=is_init, latest_ts=latest_ts)
 
             if df is None or df.empty:
                 continue
