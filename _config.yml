@@ -1,0 +1,12 @@
+# GitHub Pages Jekyll Configuration
+# Prevent large Parquet datasets, scripts, and internal files from being bundled into Pages
+# This strictly guarantees the Pages deployment artifact stays well below the 1GB limit.
+
+exclude:
+  - data/
+  - scripts/
+  - reports/
+  - .github/
+  - requirements.txt
+  - query_example.py
+  - LICENSE
