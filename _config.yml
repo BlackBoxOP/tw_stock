@@ -1,9 +1,13 @@
 # GitHub Pages Jekyll Configuration
-# Prevent large Parquet datasets, scripts, and internal files from being bundled into Pages
-# This strictly guarantees the Pages deployment artifact stays well below the 1GB limit.
+# 只排除 1 分 K 線龐大高頻資料 (data/by_ticker/ 與 data/by_date/)，其餘維度資料皆維持由 Pages CDN 發布
+# 確保 GitHub Pages 打包之站點容量嚴格維持在 1GB (1024 MB) 限制之內 (目前維持約 420 MB)
 
 exclude:
-  - data/
+  # 1 分鐘高頻 K 線數據庫 (體積龐大且每日持續高速增長，排除以防 Pages 破 1GB)
+  - data/by_ticker/
+  - data/by_date/
+
+  # 專案程式碼與內部管理文件 (非靜態網頁資產)
   - scripts/
   - reports/
   - .github/
