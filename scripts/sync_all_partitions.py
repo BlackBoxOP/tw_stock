@@ -27,11 +27,11 @@ def detect_existing_freq(ticker_file):
     if os.path.exists(ticker_file) and os.path.getsize(ticker_file) > 0:
         try:
             sample = pd.read_parquet(ticker_file, columns=['Datetime'])
-            if not sample.empty and 'Datetime' in sample.columns:
+            if not sample.empty and 'Datetime' in sample.columns and sample['Datetime'].notna().any():
                 return '1m'
         except Exception:
             return '1d'
-    return None
+    return '1d'
 
 def clean_1m_data(df, ticker):
     df = df.reset_index()
@@ -79,10 +79,18 @@ def get_ticker_latest_timestamp(ticker_file, freq='1d'):
         if freq == '1m':
             df = pd.read_parquet(ticker_file, columns=['Datetime'])
             if not df.empty and 'Datetime' in df.columns:
-                return pd.to_datetime(df['Datetime']).max()
+                valid_dt = pd.to_datetime(df['Datetime'], errors='coerce').dropna()
+                if not valid_dt.empty:
+                    val = valid_dt.max()
+                    if val is not None and not pd.isna(val):
+                        return val
         df = pd.read_parquet(ticker_file, columns=['Date'])
         if not df.empty and 'Date' in df.columns:
-            return pd.to_datetime(df['Date']).dt.date.max()
+            valid_d = pd.to_datetime(df['Date'], errors='coerce').dropna()
+            if not valid_d.empty:
+                val = valid_d.dt.date.max()
+                if val is not None and not pd.isna(val):
+                    return val
     except Exception:
         return None
     return None
@@ -101,20 +109,28 @@ def should_skip_ticker(ticker, is_init=False, force=False):
             return True, freq, "1分K歷史資料已存在 (跳過初始化)"
         today = datetime.now().date()
         latest_ts = get_ticker_latest_timestamp(ticker_file, freq='1m')
-        if latest_ts is not None:
+        if latest_ts is not None and not pd.isna(latest_ts):
             latest_date = latest_ts.date() if hasattr(latest_ts, 'date') else latest_ts
-            if latest_date >= today and datetime.now().hour >= 14:
-                return True, freq, f"1分K已包含今日最新收盤資料 ({latest_ts})"
+            if latest_date is not None and not pd.isna(latest_date):
+                try:
+                    if latest_date >= today and datetime.now().hour >= 14:
+                        return True, freq, f"1分K已包含今日最新收盤資料 ({latest_ts})"
+                except Exception:
+                    pass
         return False, freq, latest_ts
     else:
         if is_init:
             return True, freq, "日線歷史資料已存在 (跳過初始化)"
         today = datetime.now().date()
         latest_ts = get_ticker_latest_timestamp(ticker_file, freq='1d')
-        if latest_ts is not None:
+        if latest_ts is not None and not pd.isna(latest_ts):
             latest_date = latest_ts.date() if hasattr(latest_ts, 'date') else latest_ts
-            if latest_date >= today and datetime.now().hour >= 14:
-                return True, freq, f"日線已包含今日最新資料 ({latest_date})"
+            if latest_date is not None and not pd.isna(latest_date):
+                try:
+                    if latest_date >= today and datetime.now().hour >= 14:
+                        return True, freq, f"日線已包含今日最新資料 ({latest_date})"
+                except Exception:
+                    pass
         return False, freq, latest_ts
 
 def fetch_ticker_data(stock, ticker, is_init=False, latest_ts=None):
@@ -126,12 +142,19 @@ def fetch_ticker_data(stock, ticker, is_init=False, latest_ts=None):
     2. 若標的無 1 分線資料 (如冷門標的、權證等)，回退至日線 (interval='1d')
     """
     today = datetime.now().date()
-    if is_init or latest_ts is None:
+    if is_init or latest_ts is None or pd.isna(latest_ts):
         period_1m = "7d"
         period_1d = "max" if is_init else "5d"
     else:
-        last_date = latest_ts.date() if hasattr(latest_ts, 'date') else latest_ts
-        gap_days = max(0, (today - last_date).days)
+        try:
+            last_date = latest_ts.date() if hasattr(latest_ts, 'date') else latest_ts
+            if last_date is None or pd.isna(last_date):
+                gap_days = 999
+            else:
+                gap_days = max(0, (today - last_date).days)
+        except Exception:
+            gap_days = 999
+
         if gap_days <= 1:
             # 昨天已抓或今日更新：只需抓 2 天 (涵蓋昨今兩日，快速補齊並防呆覆蓋集合競價)
             period_1m = "2d"
