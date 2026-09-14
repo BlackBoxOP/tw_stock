@@ -146,7 +146,6 @@ def fetch_twse_mi_5mins(date_str=None):
     return output_path
 
 if __name__ == "__main__":
-    fetch_twse_mi_5mins()
     import argparse
     parser = argparse.ArgumentParser(description="抓取 TWSE 盤中每5秒委託成交統計")
     parser.add_argument("--date", type=str, default=None, help="交易日期 (格式: YYYY-MM-DD)")

@@ -37,6 +37,7 @@ jobs:
             echo "股票名單無變更。"
           else
             git commit -m "Auto: Weekly refresh TW stock list [skip ci]"
-            git push
+            git pull --rebase origin main
+            git push origin main
           fi
 
