@@ -30,10 +30,23 @@ REPORT_DIR = "reports"
 os.makedirs(REPORT_DIR, exist_ok=True)
 
 def get_latest_date():
-    inst_files = sorted(glob.glob("data/institutional/*.parquet"))
-    if inst_files:
-        return os.path.splitext(os.path.basename(inst_files[-1]))[0]
-    return datetime.now().strftime("%Y-%m-%d")
+    dates = set()
+    patterns = [
+        "data/institutional/*.parquet",
+        "data/market_indices/*.parquet",
+        "data/by_date/*.parquet",
+        "data/margin/*.parquet",
+        "data/valuation/*.parquet",
+    ]
+    for pattern in patterns:
+        for p in glob.glob(pattern):
+            b = os.path.splitext(os.path.basename(p))[0]
+            if len(b) == 10 and b.count('-') == 2 and b.replace('-', '').isdigit():
+                dates.add(b)
+    if dates:
+        return sorted(dates)[-1]
+    from datetime import timezone, timedelta
+    return datetime.now(timezone(timedelta(hours=8))).strftime("%Y-%m-%d")
 
 def generate_report(target_date=None, save_md=True):
     if target_date is None:

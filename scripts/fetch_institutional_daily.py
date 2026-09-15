@@ -28,7 +28,27 @@ def clean_num(val):
             return 0
 
 def get_latest_official_date():
-    """向 TWSE MI_INDEX 查詢目前最新官方收盤交易日 (避免誤標未收盤日期)"""
+    """向 TWSE/TPEx 官方即時盤後端點查詢最新官方已結算交易日 (收盤後 15:00 即時提供)"""
+    try:
+        r = requests.get("https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX?response=json", headers=HEADERS, timeout=10)
+        if r.status_code == 200:
+            j = r.json()
+            d = str(j.get('date', '')).strip()
+            if len(d) == 8 and d.isdigit():
+                return f"{d[:4]}-{d[4:6]}-{d[6:]}"
+    except Exception:
+        pass
+
+    try:
+        r = requests.get("https://www.tpex.org.tw/www/zh-tw/insti/dailyTrade?type=Daily&sect=EW&response=json", headers=HEADERS, timeout=10)
+        if r.status_code == 200:
+            j = r.json()
+            d = str(j.get('date', '')).strip()
+            if len(d) == 8 and d.isdigit():
+                return f"{d[:4]}-{d[4:6]}-{d[6:]}"
+    except Exception:
+        pass
+
     try:
         r = requests.get("https://openapi.twse.com.tw/v1/exchangeReport/MI_INDEX", headers=HEADERS, timeout=10)
         if r.status_code == 200:
@@ -42,7 +62,13 @@ def get_latest_official_date():
                     return f"{roc_year + 1911}-{month}-{day}"
     except Exception:
         pass
-    return (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+
+    from datetime import timezone
+    taipei_now = datetime.now(timezone(timedelta(hours=8)))
+    target = taipei_now.date() if (taipei_now.weekday() < 5 and taipei_now.hour >= 15) else (taipei_now.date() - timedelta(days=1))
+    while target.weekday() >= 5:
+        target -= timedelta(days=1)
+    return target.strftime("%Y-%m-%d")
 
 def fetch_twse_institutional(date_str):
     """

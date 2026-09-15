@@ -3,7 +3,9 @@ import time
 import argparse
 import pandas as pd
 import yfinance as yf
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
+
+TAIPEI_TZ = timezone(timedelta(hours=8))
 
 DIR_TICKER = "data/by_ticker"
 DIR_DATE = "data/by_date"
@@ -104,16 +106,18 @@ def should_skip_ticker(ticker, is_init=False, force=False):
 
     freq = detect_existing_freq(ticker_file) or '1d'
 
+    now_taipei = datetime.now(TAIPEI_TZ)
+    today = now_taipei.date()
+
     if freq == '1m':
         if is_init:
             return True, freq, "1分K歷史資料已存在 (跳過初始化)"
-        today = datetime.now().date()
         latest_ts = get_ticker_latest_timestamp(ticker_file, freq='1m')
         if latest_ts is not None and not pd.isna(latest_ts):
             latest_date = latest_ts.date() if hasattr(latest_ts, 'date') else latest_ts
             if latest_date is not None and not pd.isna(latest_date):
                 try:
-                    if latest_date >= today and datetime.now().hour >= 14:
+                    if latest_date >= today and now_taipei.hour >= 14:
                         return True, freq, f"1分K已包含今日最新收盤資料 ({latest_ts})"
                 except Exception:
                     pass
@@ -121,13 +125,12 @@ def should_skip_ticker(ticker, is_init=False, force=False):
     else:
         if is_init:
             return True, freq, "日線歷史資料已存在 (跳過初始化)"
-        today = datetime.now().date()
         latest_ts = get_ticker_latest_timestamp(ticker_file, freq='1d')
         if latest_ts is not None and not pd.isna(latest_ts):
             latest_date = latest_ts.date() if hasattr(latest_ts, 'date') else latest_ts
             if latest_date is not None and not pd.isna(latest_date):
                 try:
-                    if latest_date >= today and datetime.now().hour >= 14:
+                    if latest_date >= today and now_taipei.hour >= 14:
                         return True, freq, f"日線已包含今日最新資料 ({latest_date})"
                 except Exception:
                     pass
@@ -141,7 +144,8 @@ def fetch_ticker_data(stock, ticker, is_init=False, latest_ts=None):
        - 若已有近期歷史：依據差距天數動態計算 period (日常同步只需 2d，跨週末或連假動態補齊)，大幅節省 70% 網路頻寬與時間！
     2. 若標的無 1 分線資料 (如冷門標的、權證等)，回退至日線 (interval='1d')
     """
-    today = datetime.now().date()
+    now_taipei = datetime.now(TAIPEI_TZ)
+    today = now_taipei.date()
     if is_init or latest_ts is None or pd.isna(latest_ts):
         period_1m = "7d"
         period_1d = "max" if is_init else "5d"
